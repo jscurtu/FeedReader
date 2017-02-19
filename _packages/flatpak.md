@@ -12,7 +12,8 @@ For more information about Flatpak and how to use or install it for your distrib
 <pre><ul><li>xdg-desktop-portal</li><li>xdg-desktop-portal-gtk</li></ul></pre>
 
 <h3><small>Install FeedReader Flatpak via repository:</small></h3>
-<button type="button" class="btn btn-default">Default</button>
+<a class="btn btn-primary" href="http://feedreader.xarbit.net/feedreader-repo/feedreader.flatpakref">Download</a>
+<button type="button" class="btn btn-primary">Install</button>
 <pre>
 flatpak install http://feedreader.xarbit.net/feedreader-repo/feedreader.flatpakref
 </pre>
