@@ -54,7 +54,7 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 		return "0";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string cadID)
+	public bool hideCategoryWhenEmpty(string cadID)
 	{
 		return false;
 	}
@@ -85,9 +85,9 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 	}
 
 	public void resetAccount()
-    {
-        m_utils.resetAccount();
-    }
+	{
+		m_utils.resetAccount();
+	}
 
 	public bool useMaxArticles()
 	{
@@ -119,7 +119,7 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 		m_api.markFeedRead(feedID, false);
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		m_api.markFeedRead(catID, true);
 	}
@@ -159,22 +159,32 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 		return m_api.ping();
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
+		bool success = false;
+		int64 id = 0;
 		if(catID == null && newCatName != null)
 		{
 			string newCatID = m_api.addFolder(newCatName).to_string();
-			return m_api.addFeed(feedURL, newCatID).to_string();
+			success = m_api.addFeed(feedURL, newCatID, out id, out errmsg);
+		}
+		else
+		{
+			success = m_api.addFeed(feedURL, catID, out id, out errmsg);
 		}
 
-		return m_api.addFeed(feedURL, catID).to_string();
+
+		feedID = id.to_string();
+		return success;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
+		int64 id = 0;
+		string errmsg = "";
 		foreach(feed f in feeds)
 		{
-			m_api.addFeed(f.getXmlUrl(), f.getCatIDs()[0]);
+			m_api.addFeed(f.getXmlUrl(), f.getCatIDs()[0], out id, out errmsg);
 		}
 	}
 
@@ -224,11 +234,16 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 		parser.parse();
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
-		if(m_api.getFeeds(feeds)
-		&& m_api.getCategories(categories, feeds))
-			return true;
+		if(m_api.getFeeds(feeds))
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			if(m_api.getCategories(categories, feeds))
+				return true;
+		}
 
 		return false;
 	}
@@ -238,7 +253,7 @@ public class FeedReader.OwncloudNewsInterface : Peas.ExtensionBase, FeedServerIn
 		return (int)dbDaemon.get_default().get_unread_total();
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 		var type = OwncloudNewsAPI.OwnCloudType.ALL;
 		bool read = true;

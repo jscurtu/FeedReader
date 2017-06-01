@@ -34,17 +34,17 @@ public class FeedReader.freshAPI : Object {
 		return m_connection.getSID();
 	}
 
-	public bool getSubscriptionList(Gee.LinkedList<feed> feeds)
+	public bool getSubscriptionList(Gee.List<feed> feeds)
 	{
-		string response = m_connection.getRequest("reader/api/0/subscription/list?output=json");
+		var response = m_connection.getRequest("reader/api/0/subscription/list?output=json");
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e)
 		{
@@ -73,26 +73,18 @@ public class FeedReader.freshAPI : Object {
 				title = Utils.URLtoFeedName(url);
 			}
 
-			string icon_url = "";
+			string? icon_url = null;
 			if(object.has_member("iconUrl"))
-			{
 				icon_url = object.get_string_member("iconUrl");
-			}
-			if(icon_url != "" && !m_utils.downloadIcon(id, icon_url))
-			{
-				icon_url = "";
-			}
-
-			bool hasIcon = (icon_url == "") ? false : true;
 
 			feeds.add(
 				new feed(
 					id,
 					title,
 					url,
-					hasIcon,
 					0,
 					{ catID },
+					icon_url,
 					xmlURL)
 			);
 		}
@@ -100,18 +92,18 @@ public class FeedReader.freshAPI : Object {
 		return true;
 	}
 
-	public bool getTagList(Gee.LinkedList<category> categories)
+	public bool getTagList(Gee.List<category> categories)
 	{
-		string response = m_connection.getRequest("reader/api/0/tag/list?output=json");
+		var response = m_connection.getRequest("reader/api/0/tag/list?output=json");
 		string prefix = "user/-/label/";
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e)
 		{
@@ -147,13 +139,17 @@ public class FeedReader.freshAPI : Object {
 
 	public int getUnreadCounts()
 	{
+		var response = m_connection.getRequest("reader/api/0/unread-count?output=json");
+
+		if(response.status != 200)
+			return 0;
+
 		int count = 0;
-		string response = m_connection.getRequest("reader/api/0/unread-count?output=json");
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e)
 		{
@@ -208,12 +204,15 @@ public class FeedReader.freshAPI : Object {
 
 		Logger.debug("getStreamContents: %s".printf(msg.get()));
 
-		string response = m_connection.getRequest(path + "?" + msg.get());
+		var response = m_connection.getRequest(path + "?" + msg.get());
+
+		if(response.status != 200)
+			return null;
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch(Error e)
 		{
@@ -317,10 +316,13 @@ public class FeedReader.freshAPI : Object {
 			msg.add("r", "-/" + id);
 		}
 
-		string response = m_connection.postRequest(path,  msg.get(), "application/x-www-form-urlencoded");
+		var response = m_connection.postRequest(path,  msg.get(), "application/x-www-form-urlencoded");
 
-		Logger.debug(path + " " + msg.get());
-		Logger.debug(response);
+		if(response.status != 200)
+		{
+			Logger.debug(path + " " + msg.get());
+			Logger.debug(response.status.to_string());
+		}
 	}
 
 	public void markAllAsRead(string streamID)
@@ -332,13 +334,16 @@ public class FeedReader.freshAPI : Object {
 		msg.add("s", streamID);
 		msg.add("ts", dbDaemon.get_default().getNewestArticle());
 
-		string response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
+		var response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
 
-		Logger.debug(path + " " + msg.get());
-		Logger.debug(response);
+		if(response.status != 200)
+		{
+			Logger.debug(path + " " + msg.get());
+			Logger.debug(response.status.to_string());
+		}
 	}
 
-	public string editStream(
+	public Response editStream(
 							string action,
 							string[]? streamID = null,
 							string? title = null,
@@ -367,10 +372,14 @@ public class FeedReader.freshAPI : Object {
 		if(remove != null)
 			msg.add("r", remove);
 
-		string response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
+		var response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
 
-		Logger.debug(path + " " + msg.get());
-		Logger.debug(response);
+		if(response.status != 200)
+		{
+			Logger.debug(path + " " + msg.get());
+			Logger.debug(response.status.to_string());
+		}
+
 		return response;
 	}
 
@@ -388,10 +397,14 @@ public class FeedReader.freshAPI : Object {
 		msg.add("s", tagID);
 		msg.add("dest", composeTagID(title));
 
-		string response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
+		var response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
 
-		Logger.debug(path + " " + msg.get());
-		Logger.debug(response);
+
+		if(response.status != 200)
+		{
+			Logger.debug(path + " " + msg.get());
+			Logger.debug(response.status.to_string());
+		}
 	}
 
 	public void deleteTag(string tagID)
@@ -402,10 +415,13 @@ public class FeedReader.freshAPI : Object {
 		msg.add("T", m_connection.getToken());
 		msg.add("s", tagID);
 
-		string response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
+		var response = m_connection.postRequest(path, msg.get(), "application/x-www-form-urlencoded");
 
-		Logger.debug(path + " " + msg.get());
-		Logger.debug(response);
+		if(response.status != 200)
+		{
+			Logger.debug(path + " " + msg.get());
+			Logger.debug(response.status.to_string());
+		}
 	}
 
 }

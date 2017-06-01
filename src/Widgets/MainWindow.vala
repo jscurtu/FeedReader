@@ -147,7 +147,7 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 		this.set_title("FeedReader");
 		this.set_default_size(Settings.state().get_int("window-width"), Settings.state().get_int("window-height"));
 		this.delete_event.connect(() => {
-			getInterfaceState().write();
+			writeInterfaceState(true);
 			return false;
 		});
 		this.show_all();
@@ -233,7 +233,6 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 			ColumnView.get_default().newFeedList();
 		m_stack.set_visible_child_full("content", transition);
 		ColumnView.get_default().getHeader().setButtonsSensitive(true);
-		//ColumnView.get_default().updateAccountInfo();
 
 		if(!ColumnView.get_default().isFullscreen())
 		{
@@ -286,9 +285,9 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 		return state;
 	}
 
-	public void writeInterfaceState()
+	public void writeInterfaceState(bool shutdown = false)
 	{
-		getInterfaceState().write();
+		getInterfaceState().write(shutdown);
 	}
 
 	public void reloadCSS()
@@ -328,7 +327,7 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 		Gtk.CssProvider provider = new Gtk.CssProvider();
 		provider.load_from_resource(path);
 		weak Gdk.Display display = Gdk.Display.get_default();
-        weak Gdk.Screen screen = display.get_default_screen();
+		weak Gdk.Screen screen = display.get_default_screen();
 		Gtk.StyleContext.add_provider_for_screen(screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 		return provider;
 	}
@@ -336,7 +335,7 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 	private void removeProvider(Gtk.CssProvider provider)
 	{
 		weak Gdk.Display display = Gdk.Display.get_default();
-        weak Gdk.Screen screen = display.get_default_screen();
+		weak Gdk.Screen screen = display.get_default_screen();
 		Gtk.StyleContext.remove_provider_for_screen(screen, provider);
 	}
 
@@ -377,30 +376,16 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 		loginBox.pack_start(m_error_bar, false, false, 0);
 		loginBox.pack_start(m_login, true, true, 0);
 
-		m_login.submit_data.connect(login);
+		m_login.submit_data.connect(() => {
+			Settings.state().set_strv("expanded-categories", Utils.getDefaultExpandedCategories());
+			Settings.state().set_string("feedlist-selected-row", "feed -4");
+			showContent(Gtk.StackTransitionType.SLIDE_RIGHT);
+		});
 		m_login.loginError.connect((errorCode) => {
 			showErrorBar(errorCode);
 		});
 		m_stack.add_named(loginBox, "login");
 		m_error_bar.set_visible(false);
-	}
-
-	private void login()
-	{
-		Settings.state().set_strv("expanded-categories", Utils.getDefaultExpandedCategories());
-		Settings.state().set_string("feedlist-selected-row", "feed -4");
-		try
-		{
-			if(dbUI.get_default().isEmpty())
-				DBusConnection.get_default().startInitSync();
-			else
-				DBusConnection.get_default().startSync();
-		}
-		catch(GLib.Error e)
-		{
-			Logger.error("MainWindow.login: %s".printf(e.message));
-		}
-		showContent(Gtk.StackTransitionType.SLIDE_RIGHT);
 	}
 
 	private void setupResetPage()
@@ -554,13 +539,13 @@ public class FeedReader.MainWindow : Gtk.ApplicationWindow
 		Gdk.ModifierType? mod;
 		string setting = Settings.keybindings().get_string(gsettingKey);
 		Gtk.accelerator_parse(setting, out key, out mod);
-		Logger.debug(gsettingKey);
 
 		if(key != null && Gdk.keyval_to_lower(event.keyval) == key)
 		{
 			if(mod == null || mod == 0)
 			{
-				if(event.state == 16)
+				if(event.state == 16
+				|| event.state == 0)
 					return true;
 			}
 			else if(mod in event.state)

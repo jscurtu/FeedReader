@@ -17,7 +17,7 @@
 interface FeedReaderWebExtension : Object
 {
 	public abstract void recalculate() throws IOError;
-    public signal void onClick(string path, int width, int height, string url);
+	public signal void onClick(string path, int width, int height, string url);
 	public signal void message(string message);
 }
 
@@ -106,12 +106,17 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 					recalculate.end(res);
 				});
 			}
-        });
+		});
 
 		m_fsHead = new FullscreenHeader();
 
+		m_progress = new ArticleViewLoadProgress();
+		var progressOverlay = new Gtk.Overlay();
+		progressOverlay.add(m_stack);
+		progressOverlay.add_overlay(m_progress);
+
 		var fullscreenHeaderOverlay = new Gtk.Overlay();
-		fullscreenHeaderOverlay.add(m_stack);
+		fullscreenHeaderOverlay.add(progressOverlay);
 		fullscreenHeaderOverlay.add_overlay(m_fsHead);
 
 		m_prevButton = new fullscreenButton("go-previous-symbolic", Gtk.Align.START);
@@ -130,15 +135,8 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 		nextOverlay.add(prevOverlay);
 		nextOverlay.add_overlay(m_nextButton);
 
-
-		m_progress = new ArticleViewLoadProgress();
-
-		var progressOverlay = new Gtk.Overlay();
-		progressOverlay.add(nextOverlay);
-		progressOverlay.add_overlay(m_progress);
-
 		m_videoOverlay = new Gtk.Overlay();
-		m_videoOverlay.add(progressOverlay);
+		m_videoOverlay.add(nextOverlay);
 
 		this.add(m_videoOverlay);
 		this.add_overlay(m_UrlOverlay);
@@ -167,6 +165,7 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 		settings.set_enable_page_cache(false);
 		settings.set_enable_plugins(false);
 		settings.set_enable_smooth_scrolling(smoothScroll);
+		settings.set_enable_javascript(Settings.tweaks().get_boolean("allow-javascript"));
 		settings.set_javascript_can_access_clipboard(false);
 		settings.set_javascript_can_open_windows_automatically(false);
 		settings.set_media_playback_requires_user_gesture(true);
@@ -215,9 +214,9 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 
 		if(m_OngoingScrollID > 0)
 		{
-            GLib.Source.remove(m_OngoingScrollID);
-            m_OngoingScrollID = 0;
-        }
+			GLib.Source.remove(m_OngoingScrollID);
+			m_OngoingScrollID = 0;
+		}
 
 		article Article = null;
 		SourceFunc callback = fillContent.callback;
@@ -254,7 +253,7 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 						Article.getTitle(),
 						Article.getURL(),
 						Article.getAuthor(),
-						Article.getDateNice(),
+						Article.getDateNice(true),
 						Article.getFeedID()
 					)
 				, "file://" + GLib.Environment.get_user_data_dir() + "/feedreader/data/images/");
@@ -365,6 +364,20 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 		{
 			case WebKit.LoadEvent.STARTED:
 				Logger.debug("ArticleView: load STARTED");
+				string url = m_currentView.get_uri();
+				if(url != "file://" + GLib.Environment.get_user_data_dir() + "/feedreader/data/images/")
+				{
+					Logger.debug(@"ArticleView: open external url: $url");
+					try
+					{
+						Gtk.show_uri(Gdk.Screen.get_default(), url, Gdk.CURRENT_TIME);
+					}
+					catch(GLib.Error e)
+					{
+						Logger.debug("could not open the link in an external browser: %s".printf(e.message));
+					}
+					m_currentView.stop_loading();
+				}
 				break;
 			case WebKit.LoadEvent.COMMITTED:
 				Logger.debug("ArticleView: load COMMITTED");
@@ -503,9 +516,9 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 
 
 	private void on_extension_appeared(GLib.DBusConnection connection, string name, string owner)
-    {
-    	try
-    	{
+	{
+		try
+		{
 			m_connected = true;
 			m_messenger = connection.get_proxy_sync("org.gnome.FeedReader.ArticleView", "/org/gnome/FeedReader/ArticleView", GLib.DBusProxyFlags.DO_NOT_AUTO_START, null);
 			m_messenger.onClick.connect((path, width, height, url) => {
@@ -523,10 +536,10 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 		{
 			Logger.error("ArticleView.on_extension_appeared: " + e.message);
 		}
-    }
+	}
 
 	private async void recalculate()
-    {
+	{
 		SourceFunc callback = recalculate.callback;
 		ThreadFunc<void*> run = () => {
 			try
@@ -546,7 +559,7 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 		};
 		new GLib.Thread<void*>("recalculate", run);
 		yield;
-    }
+	}
 
 	private bool onClick(Gdk.EventButton event)
 	{
@@ -613,10 +626,21 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 	{
 		if((event.state & Gdk.ModifierType.CONTROL_MASK) == Gdk.ModifierType.CONTROL_MASK)
 		{
-			if(event.delta_y > 0)
-				m_currentView.zoom_level -= 0.25;
-			else if(event.delta_y < 0)
-				m_currentView.zoom_level += 0.25;
+			switch(event.direction)
+			{
+				case Gdk.ScrollDirection.UP:
+					m_currentView.zoom_level -= 0.25;
+					break;
+
+				case Gdk.ScrollDirection.DOWN:
+					m_currentView.zoom_level += 0.25;
+					break;
+
+				case Gdk.ScrollDirection.SMOOTH:
+					m_currentView.zoom_level -= 10 * (event.delta_y / event.y_root);
+					break;
+			}
+
 			return true;
 		}
 
@@ -719,11 +743,11 @@ public class FeedReader.ArticleView : Gtk.Overlay {
 	{
 		Logger.debug("ArticleView.setBackgroundColor()");
 		var background = ColumnView.get_default().getBackgroundColor();
-        if(background.alpha == 1.0)
-        {
+		if(background.alpha == 1.0)
+		{
 			// Don't set a background color that is transparent.
 			m_color = background;
-        }
+		}
 	}
 
 	private bool onContextMenu(WebKit.ContextMenu menu, Gdk.Event event, WebKit.HitTestResult hitTest)

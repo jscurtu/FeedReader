@@ -24,12 +24,12 @@ public class FeedReader.feedbinUtils : GLib.Object {
 
 	public string getUser()
 	{
-		return m_settings.get_string("username");
+		return Utils.gsettingReadString(m_settings, "username");
 	}
 
 	public void setUser(string user)
 	{
-		m_settings.set_string("username", user);
+		Utils.gsettingWriteString(m_settings, "username", user);
 	}
 
 	public string getPasswd()
@@ -106,7 +106,7 @@ public class FeedReader.feedbinUtils : GLib.Object {
 		return removed;
 	}
 
-	public string? catExists(Gee.LinkedList<category> categories, string name)
+	public string? catExists(Gee.List<category> categories, string name)
 	{
 		foreach(category cat in categories)
 		{
@@ -117,7 +117,7 @@ public class FeedReader.feedbinUtils : GLib.Object {
 		return null;
 	}
 
-	public void addFeedToCat(Gee.LinkedList<feed> feeds, string feedID, string catID)
+	public void addFeedToCat(Gee.List<feed> feeds, string feedID, string catID)
 	{
 		foreach(feed f in feeds)
 		{

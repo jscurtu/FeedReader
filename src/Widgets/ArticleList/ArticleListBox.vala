@@ -15,7 +15,7 @@
 
 public class FeedReader.ArticleListBox : Gtk.ListBox {
 
-	private Gee.LinkedList<article> m_lazyQeue;
+	private Gee.List<article> m_lazyQeue;
 	private uint m_idleID = 0;
 	private string m_name;
 	private uint m_selectSourceID = 0;
@@ -39,38 +39,52 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 		this.row_activated.connect(rowActivated);
 	}
 
-	public void newList(Gee.LinkedList<article> articles)
+	public void newList(Gee.List<article> articles)
 	{
 		stopLoading();
 		emptyList();
+		setPos(articles, -1);
 		m_lazyQeue = articles;
 		addRow(ArticleListBalance.NONE);
 	}
 
-	public void addTop(Gee.LinkedList<article> articles)
+	public void addTop(Gee.List<article> articles)
 	{
 		stopLoading();
+		setPos(articles, 0);
 		m_lazyQeue = articles;
-		addRow(ArticleListBalance.TOP, 0, true);
+		addRow(ArticleListBalance.TOP, true);
 	}
 
-	public void addBottom(Gee.LinkedList<article> articles)
+	public void addBottom(Gee.List<article> articles)
 	{
 		stopLoading();
+		setPos(articles, -1);
 		m_lazyQeue = articles;
 		addRow(ArticleListBalance.NONE);
 	}
 
-	private void stopLoading()
+	private bool stopLoading()
 	{
 		if(m_idleID > 0)
 		{
 			GLib.Source.remove(m_idleID);
 			m_idleID = 0;
+			return true;
+		}
+
+		return false;
+	}
+
+	private void setPos(Gee.List<article> articles, int pos)
+	{
+		foreach(article a in articles)
+		{
+			a.setPos(pos);
 		}
 	}
 
-	private void addRow(ArticleListBalance balance, int pos = -1, bool reverse = false, bool animate = false)
+	private void addRow(ArticleListBalance balance, bool reverse = false, bool animate = false)
 	{
 		if(m_lazyQeue.size == 0)
 		{
@@ -99,7 +113,7 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 			if(m_articles.contains(item.getArticleID()))
 			{
 				Logger.warning(@"ArticleListbox$m_name: row with ID %s is already present".printf(item.getArticleID()));
-				checkQueue(item, balance, pos, reverse, animate);
+				checkQueue(item, balance, reverse, animate);
 				return false;
 			}
 
@@ -122,10 +136,10 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 			});
 
 			newRow.realize.connect(() => {
-				checkQueue(item, balance, pos, reverse, animate);
+				checkQueue(item, balance, reverse, animate);
 			});
 
-			this.insert(newRow, pos);
+			this.insert(newRow, item.getPos());
 
 			if(animate)
 				newRow.reveal(true, 150);
@@ -136,12 +150,12 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 		}, priority);
 	}
 
-	private void checkQueue(article item, ArticleListBalance balance, int pos = -1, bool reverse = false, bool animate = false)
+	private void checkQueue(article item, ArticleListBalance balance, bool reverse = false, bool animate = false)
 	{
 		if(m_lazyQeue.size > 1)
 		{
 			m_lazyQeue.remove(item);
-			addRow(balance, pos, reverse, animate);
+			addRow(balance, reverse, animate);
 		}
 		else
 		{
@@ -184,16 +198,16 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 
 		if(m_selectSourceID > 0)
 		{
-            GLib.Source.remove(m_selectSourceID);
-            m_selectSourceID = 0;
-        }
-
-        m_selectSourceID = Timeout.add(time, () => {
-			if(!ColumnView.get_default().searchFocused())
-            	row.activate();
+			GLib.Source.remove(m_selectSourceID);
 			m_selectSourceID = 0;
-            return false;
-        });
+		}
+
+		m_selectSourceID = Timeout.add(time, () => {
+			if(!ColumnView.get_default().searchFocused())
+				row.activate();
+			m_selectSourceID = 0;
+			return false;
+		});
 	}
 
 	private void setRead(articleRow row)
@@ -349,7 +363,8 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 		row.reveal(false, animateDuration);
 		m_articles.remove(id);
 		GLib.Timeout.add(animateDuration + 50, () => {
-			this.remove(row);
+			if(row.get_parent() != null)
+				this.remove(row);
 			return false;
 		});
 	}
@@ -620,6 +635,24 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 		return m_articles.size;
 	}
 
+	public int getSizeForState()
+	{
+		if(m_state == ArticleListState.UNREAD)
+		{
+			int unread = 0;
+			var children = this.get_children();
+			foreach(var row in children)
+			{
+				var tmpRow = row as articleRow;
+				if(tmpRow != null && tmpRow.isUnread())
+					unread += 1;
+			}
+			return unread;
+		}
+
+		return getSize();
+	}
+
 	public bool needLoadMore(int height)
 	{
 		int rowHeight = 0;
@@ -636,5 +669,67 @@ public class FeedReader.ArticleListBox : Gtk.ListBox {
 			return true;
 
 		return false;
+	}
+
+	public Gee.List<string> getIDs()
+	{
+		var tmp = new Gee.LinkedList<string>();
+		foreach(string id in m_articles)
+		{
+			tmp.add(id);
+		}
+		return tmp;
+	}
+
+	public void setAllUpdated(bool updated = false)
+	{
+		var children = this.get_children();
+		foreach(var row in children)
+		{
+			var tmpRow = row as articleRow;
+			if(tmpRow != null)
+				tmpRow.setUpdated(updated);
+		}
+	}
+
+	public void removeObsoleteRows()
+	{
+		var children = this.get_children();
+		foreach(var row in children)
+		{
+			var tmpRow = row as articleRow;
+			if(tmpRow != null && !tmpRow.getUpdated())
+			{
+				removeRow(tmpRow, 50);
+			}
+		}
+	}
+
+	public bool insertArticle(article a, int pos)
+	{
+		if(m_articles.contains(a.getArticleID()))
+		{
+			Logger.warning(@"ArticleListbox$m_name: row with ID %s is already present".printf(a.getArticleID()));
+			return false;
+		}
+
+		a.setPos(pos);
+		stopLoading();
+		var list = new Gee.LinkedList<article>();
+		list.add(a);
+		m_lazyQeue = list;
+		addRow(ArticleListBalance.NONE, false, false);
+		return true;
+	}
+
+	public void reloadFavIcons()
+	{
+		var children = this.get_children();
+		foreach(var row in children)
+		{
+			var tmpRow = row as articleRow;
+			if(tmpRow != null)
+				tmpRow.reloadFavIcon();
+		}
 	}
 }

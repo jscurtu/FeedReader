@@ -48,8 +48,10 @@ namespace FeedReader {
 
 		protected override void startup()
 		{
-			Logger.init("ui");
+			Logger.init();
 			Logger.info("FeedReader " + AboutInfo.version);
+
+			Settings.state().set_boolean("ui-running", true);
 
 			base.startup();
 		}
@@ -98,6 +100,7 @@ namespace FeedReader {
 
 		protected override void shutdown()
 		{
+			Settings.state().set_boolean("ui-running", false);
 			Logger.debug("Shutdown!");
 			Gst.deinit();
 			base.shutdown();
@@ -123,6 +126,18 @@ namespace FeedReader {
 			yield;
 		}
 
+		public void cancelSync()
+		{
+			try
+			{
+				DBusConnection.get_default().cancelSync();
+			}
+			catch(IOError e)
+			{
+				Logger.error("FeedReader.sync: " + e.message);
+			}
+		}
+
 		private FeedReaderApp()
 		{
 			GLib.Object(application_id: "org.gnome.FeedReader", flags: ApplicationFlags.HANDLES_COMMAND_LINE);
@@ -132,6 +147,11 @@ namespace FeedReader {
 
 	public static int main (string[] args)
 	{
+		Ivy.Stacktrace.register_handlers();
+		Process.@signal(ProcessSignal.SEGV, onCrash);
+		Process.@signal(ProcessSignal.TRAP, onCrash);
+		Process.@signal(ProcessSignal.ABRT, onCrash);
+
 		try
 		{
 			var opt_context = new OptionContext();
@@ -166,9 +186,24 @@ namespace FeedReader {
 
 		if(pingURL != null)
 		{
-			Logger.init("ui");
+			Logger.init();
 			if(!Utils.ping(pingURL))
 				Logger.error("Ping failed");
+			return 0;
+		}
+
+		if(feedURL != null)
+		{
+			Logger.init();
+			Logger.debug(@"Adding feed $feedURL");
+			try
+			{
+				DBusConnection.get_default().addFeed(feedURL, "", false, true);
+			}
+			catch(Error e)
+			{
+				Logger.error(@"Adding feed $feedURL failed");
+			}
 			return 0;
 		}
 
@@ -187,11 +222,20 @@ namespace FeedReader {
 		return 0;
 	}
 
+	private static void onCrash(int sig)
+	{
+		stdout.printf("onCrash\n");
+		Settings.state().set_boolean("ui-running", false);
+
+		Logger.debug("ooops! Looks like FeedReader crashed");
+	}
+
 	private const GLib.OptionEntry[] options = {
 		{ "version", 0, 0, OptionArg.NONE, ref version, "FeedReader version number", null },
 		{ "about", 0, 0, OptionArg.NONE, ref about, "spawn about dialog", null },
 		{ "playMedia", 0, 0, OptionArg.STRING, ref media, "start media player with URL", "URL" },
 		{ "ping", 0, 0, OptionArg.STRING, ref pingURL, "test the ping function with given URL", "URL" },
+		{ "addFeed", 0, 0, OptionArg.STRING, ref feedURL, "add the feed to the collection", "URL" },
 		{ null }
 	};
 
@@ -199,12 +243,13 @@ namespace FeedReader {
 	private static bool about = false;
 	private static string? media = null;
 	private static string? pingURL = null;
+	private static string? feedURL = null;
 
 	static void show_about(string[] args)
 	{
 		Gtk.init(ref args);
-        Gtk.AboutDialog dialog = new Gtk.AboutDialog();
-        dialog.response.connect ((response_id) => {
+		Gtk.AboutDialog dialog = new Gtk.AboutDialog();
+		dialog.response.connect ((response_id) => {
 			if(response_id == Gtk.ResponseType.CANCEL || response_id == Gtk.ResponseType.DELETE_EVENT)
 				Gtk.main_quit();
 		});

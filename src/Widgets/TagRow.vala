@@ -104,34 +104,34 @@ public class FeedReader.TagRow : Gtk.ListBoxRow {
 	}
 
 	private bool onDragMotion(Gtk.Widget widget, Gdk.DragContext context, int x, int y, uint time)
-    {
+	{
 		this.set_state_flags(Gtk.StateFlags.PRELIGHT, false);
-        return false;
-    }
+		return false;
+	}
 
 	private void onDragLeave(Gtk.Widget widget, Gdk.DragContext context, uint time)
 	{
-        this.unset_state_flags(Gtk.StateFlags.PRELIGHT);
-    }
+		this.unset_state_flags(Gtk.StateFlags.PRELIGHT);
+	}
 
 	private bool onDragDrop(Gtk.Widget widget, Gdk.DragContext context, int x, int y, uint time)
-    {
-        // If the source offers a target
-        if(context.list_targets() != null)
+	{
+		// If the source offers a target
+		if(context.list_targets() != null)
 		{
-            var target_type = (Gdk.Atom)context.list_targets().nth_data(0);
+			var target_type = (Gdk.Atom)context.list_targets().nth_data(0);
 
-            // Request the data from the source.
-            Gtk.drag_get_data(widget, context, target_type, time);
+			// Request the data from the source.
+			Gtk.drag_get_data(widget, context, target_type, time);
 			return true;
-        }
+		}
 
 		return false;
-    }
+	}
 
 	private void onDragDataReceived(Gtk.Widget widget, Gdk.DragContext context, int x, int y,
-                                    Gtk.SelectionData selection_data, uint target_type, uint time)
-    {
+									Gtk.SelectionData selection_data, uint target_type, uint time)
+	{
 		try
 		{
 			if(selection_data != null
@@ -154,7 +154,7 @@ public class FeedReader.TagRow : Gtk.ListBoxRow {
 		{
 			Logger.error("TagRow.constructor: %s".printf(e.message));
 		}
-    }
+	}
 
 	private bool onClick(Gdk.EventButton event)
 	{
@@ -247,19 +247,8 @@ public class FeedReader.TagRow : Gtk.ListBoxRow {
 
 	public void reveal(bool reveal, uint duration = 500)
 	{
-		if(Settings.state().get_boolean("no-animations"))
-		{
-			m_revealer.set_transition_type(Gtk.RevealerTransitionType.NONE);
-			m_revealer.set_transition_duration(0);
-			m_revealer.set_reveal_child(reveal);
-			m_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN);
-			m_revealer.set_transition_duration(500);
-		}
-		else
-		{
-			m_revealer.set_transition_duration(duration);
-			m_revealer.set_reveal_child(reveal);
-		}
+		m_revealer.set_transition_duration(duration);
+		m_revealer.set_reveal_child(reveal);
 	}
 
 	private void showRenamePopover(Gdk.DragContext? context = null, uint time = 0, string? articleID = null)

@@ -19,8 +19,8 @@ namespace FeedReader {
 	public interface FeedDaemon : Object {
 
 		public abstract void scheduleSync(int time) throws IOError;
-		public abstract void startSync() throws IOError;
-		public abstract void startInitSync() throws IOError;
+		public abstract void startSync(bool initSync = false) throws IOError;
+		public abstract void cancelSync() throws IOError;
 		public abstract void changeArticle(string articleID, ArticleStatus status) throws IOError;
 		public abstract void markFeedAsRead(string feedID, bool isCat) throws IOError;
 		public abstract void markAllItemsRead() throws IOError;
@@ -36,11 +36,11 @@ namespace FeedReader {
 		// GENERAL
 		public abstract void resetAccount() throws IOError;
 		public abstract void resetDB() throws IOError;
-		public abstract int getVersion() throws IOError;
+		public abstract string getVersion() throws IOError;
 		public abstract void quit() throws IOError;
 
 		// BACKEND INFOS
-		public abstract bool hideCagetoryWhenEmtpy(string catID) throws IOError;
+		public abstract bool hideCategoryWhenEmpty(string catID) throws IOError;
 		public abstract bool supportCategories() throws IOError;
 		public abstract bool supportFeedManipulation() throws IOError;
 		public abstract bool supportMultiLevelCategories() throws IOError;
@@ -66,7 +66,7 @@ namespace FeedReader {
 		public abstract void renameCategory(string catID, string newName) throws IOError;
 
 		// MANIPULATE FEEDS
-		public abstract void addFeed(string feedURL, string cat, bool isID, bool asynchron = true) throws IOError;
+		public abstract void addFeed(string feedURL, string cat, bool isID, bool asynchron) throws IOError;
 		public abstract void removeFeed(string feedID) throws IOError;
 		public abstract void removeFeedOnlyFromCat(string m_feedID, string m_catID) throws IOError;
 		public abstract void moveFeed(string feedID, string currentCatID, string? newCatID = null) throws IOError;
@@ -79,13 +79,13 @@ namespace FeedReader {
 		public signal void springCleanStarted();
 		public signal void springCleanFinished();
 		public signal void newFeedList();
-		public signal void updateFeedList();
+		public signal void refreshFeedListCounter();
+		public signal void reloadFavIcons();
 		public signal void updateArticleList();
-		public signal void writeInterfaceState();
 		public signal void showArticleListOverlay();
 		public signal void setOffline();
 		public signal void setOnline();
-		public signal void feedAdded();
+		public signal void feedAdded(bool error, string errmsg);
 		public signal void opmlImported();
 		public signal void updateSyncProgress(string progress);
 	}
@@ -132,9 +132,14 @@ namespace FeedReader {
 				ColumnView.get_default().newFeedList();
 			});
 
-			m_connection.updateFeedList.connect(() => {
-				Logger.debug("DBusConnection: updateFeedList");
-				ColumnView.get_default().updateFeedList();
+			m_connection.refreshFeedListCounter.connect(() => {
+				Logger.debug("DBusConnection: refreshFeedListCounter");
+				ColumnView.get_default().refreshFeedListCounter();
+			});
+
+			m_connection.reloadFavIcons.connect(() => {
+				Logger.debug("DBusConnection: reloadFavIcons");
+				ColumnView.get_default().reloadFavIcons();
 			});
 
 			m_connection.updateArticleList.connect(() => {
@@ -165,11 +170,6 @@ namespace FeedReader {
 				MainWindow.get_default().showContent();
 			});
 
-			m_connection.writeInterfaceState.connect(() => {
-				Logger.debug("DBusConnection: writeInterfaceState");
-				MainWindow.get_default().writeInterfaceState();
-			});
-
 			m_connection.showArticleListOverlay.connect(() => {
 				Logger.debug("DBusConnection: showArticleListOverlay");
 				ColumnView.get_default().showArticleListOverlay();
@@ -193,9 +193,11 @@ namespace FeedReader {
 				}
 			});
 
-			m_connection.feedAdded.connect(() => {
+			m_connection.feedAdded.connect((error, errmsg) => {
 				Logger.debug("DBusConnection: feedAdded");
 				ColumnView.get_default().footerSetReady();
+				if(error)
+					ColumnView.get_default().footerShowError(errmsg);
 			});
 
 			m_connection.opmlImported.connect(() => {
@@ -214,7 +216,7 @@ namespace FeedReader {
 		{
 			try
 			{
-				if(m_connection.getVersion() < Constants.DBusAPIVersion)
+				if(m_connection.getVersion() != AboutInfo.version)
 				{
 					m_connection.quit();
 

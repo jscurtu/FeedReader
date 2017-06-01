@@ -18,7 +18,7 @@ public class FeedReader.dbBase : GLib.Object {
 	protected Sqlite.Database sqlite_db;
 	public signal void updateBadge();
 
-	protected dbBase(string dbFile = "feedreader-04.db")
+	protected dbBase(string dbFile = "feedreader-%01i.db".printf(Constants.DB_SCHEMA_VERSION))
 	{
 		Sqlite.config(Sqlite.Config.LOG, errorLogCallback);
 		string db_path = GLib.Environment.get_user_data_dir() + "/feedreader/data/";
@@ -59,66 +59,66 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public void init()
 	{
-			executeSQL("PRAGMA journal_mode = WAL");
-			executeSQL("PRAGMA page_size = 4096");
+		Logger.debug("init database");
+		executeSQL("PRAGMA journal_mode = WAL");
+		executeSQL("PRAGMA page_size = 4096");
 
-			executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."feeds"
-											(
-												"feed_id" TEXT PRIMARY KEY NOT NULL UNIQUE,
-												"name" TEXT NOT NULL,
-												"url" TEXT NOT NULL,
-												"has_icon" INTEGER NOT NULL,
-												"category_id" TEXT,
-												"subscribed" INTEGER DEFAULT 1,
-												"xmlURL" TEXT
+		executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."feeds"
+										(
+											"feed_id" TEXT PRIMARY KEY NOT NULL UNIQUE,
+											"name" TEXT NOT NULL,
+											"url" TEXT NOT NULL,
+											"category_id" TEXT,
+											"subscribed" INTEGER DEFAULT 1,
+											"xmlURL" TEXT
+										)""");
+
+		executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."categories"
+										(
+											"categorieID" TEXT PRIMARY KEY NOT NULL UNIQUE,
+											"title" TEXT NOT NULL,
+											"orderID" INTEGER,
+											"exists" INTEGER,
+											"Parent" TEXT,
+											"Level" INTEGER
 											)""");
 
-			executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."categories"
-											(
-												"categorieID" TEXT PRIMARY KEY NOT NULL UNIQUE,
-												"title" TEXT NOT NULL,
-												"orderID" INTEGER,
-												"exists" INTEGER,
-												"Parent" TEXT,
-												"Level" INTEGER
-												)""");
+		executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."articles"
+										(
+											"articleID" TEXT PRIMARY KEY NOT NULL UNIQUE,
+											"feedID" TEXT NOT NULL,
+											"title" TEXT NOT NULL,
+											"author" TEXT,
+											"url" TEXT NOT NULL,
+											"html" TEXT NOT NULL,
+											"preview" TEXT NOT NULL,
+											"unread" INTEGER NOT NULL,
+											"marked" INTEGER NOT NULL,
+											"tags" TEXT,
+											"date" INTEGER NOT NULL,
+											"guidHash" TEXT,
+											"lastModified" INTEGER,
+											"media" TEXT,
+											"contentFetched" INTEGER NOT NULL
+										)""");
 
-			executeSQL(					"""CREATE  TABLE  IF NOT EXISTS "main"."articles"
-											(
-												"articleID" TEXT PRIMARY KEY NOT NULL UNIQUE,
-												"feedID" TEXT NOT NULL,
-												"title" TEXT NOT NULL,
-												"author" TEXT,
-												"url" TEXT NOT NULL,
-												"html" TEXT NOT NULL,
-												"preview" TEXT NOT NULL,
-												"unread" INTEGER NOT NULL,
-												"marked" INTEGER NOT NULL,
-												"tags" TEXT,
-												"date" DATETIME NOT NULL,
-												"guidHash" TEXT,
-												"lastModified" INTEGER,
-												"media" TEXT,
-												"contentFetched" INTEGER NOT NULL
-											)""");
+		executeSQL(					   """CREATE  TABLE  IF NOT EXISTS "main"."tags"
+										(
+											"tagID" TEXT PRIMARY KEY NOT NULL UNIQUE,
+											"title" TEXT NOT NULL,
+											"exists" INTEGER,
+											"color" INTEGER
+										)""");
 
-			executeSQL(					   """CREATE  TABLE  IF NOT EXISTS "main"."tags"
-											(
-												"tagID" TEXT PRIMARY KEY NOT NULL UNIQUE,
-												"title" TEXT NOT NULL,
-												"exists" INTEGER,
-												"color" INTEGER
-											)""");
+		executeSQL(					   """CREATE  TABLE  IF NOT EXISTS "main"."CachedActions"
+										(
+											"action" INTEGER NOT NULL,
+											"id" TEXT NOT NULL,
+											"argument" INTEGER
+										)""");
 
-			executeSQL(					   """CREATE  TABLE  IF NOT EXISTS "main"."CachedActions"
-											(
-												"action" INTEGER NOT NULL,
-												"id" TEXT NOT NULL,
-												"argument" INTEGER
-											)""");
-
-			executeSQL(			 			"""CREATE INDEX IF NOT EXISTS "index_articles" ON "articles" ("feedID" DESC, "unread" ASC, "marked" ASC)""");
-			executeSQL(						"""CREATE VIRTUAL TABLE IF NOT EXISTS fts_table USING fts4 (content='articles', articleID, preview, title, author)""");
+		executeSQL(			 			"""CREATE INDEX IF NOT EXISTS "index_articles" ON "articles" ("feedID" DESC, "unread" ASC, "marked" ASC)""");
+		executeSQL(						"""CREATE VIRTUAL TABLE IF NOT EXISTS fts_table USING fts4 (content='articles', articleID, preview, title, author)""");
 	}
 
 	protected void executeSQL(string sql, Sqlite.Callback? callback = null)
@@ -192,10 +192,9 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public bool isTableEmpty(string table)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.%s".printf(table));
+		var query = new QueryBuilder(QueryType.SELECT, table);
 		query.selectField("count(*)");
 		query.build();
-		query.print();
 
 		int count = -1;
 		Sqlite.Statement stmt;
@@ -210,20 +209,25 @@ public class FeedReader.dbBase : GLib.Object {
 		{
 			count = stmt.column_int(0);
 		}
-		Logger.debug("count %i".printf(count));
 		stmt.reset();
 
 		if(count > 0)
+		{
+			Logger.debug(@"Table $table is not empty");
 			return false;
+		}
 		else
+		{
+			Logger.debug(@"Table $table is empty");
 			return true;
+		}
 	}
 
 	public int getArticelCount()
 	{
 		int count = -1;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.build();
 
@@ -250,7 +254,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public uint get_unread_total()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("unread", ArticleStatus.UNREAD.to_string());
 		query.build();
@@ -274,7 +278,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public uint get_marked_total()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("marked", ArticleStatus.MARKED.to_string());
 		query.build();
@@ -287,18 +291,18 @@ public class FeedReader.dbBase : GLib.Object {
 			Logger.error(sqlite_db.errmsg());
 		}
 
-		uint makred = 0;
+		uint marked = 0;
 		while (stmt.step () == Sqlite.ROW) {
-			makred = stmt.column_int(0);
+			marked = stmt.column_int(0);
 		}
 
 		stmt.reset ();
-		return makred;
+		return marked;
 	}
 
 	public uint get_unread_uncategorized()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("unread", ArticleStatus.UNREAD.to_string());
 		query.addCustomCondition(getUncategorizedFeedsQuery());
@@ -322,9 +326,9 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public uint get_marked_uncategorized()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
-		query.addEqualsCondition("makred", ArticleStatus.MARKED.to_string());
+		query.addEqualsCondition("marked", ArticleStatus.MARKED.to_string());
 		query.addCustomCondition(getUncategorizedFeedsQuery());
 		query.build();
 
@@ -346,7 +350,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public int getTagColor()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.tags");
+		var query = new QueryBuilder(QueryType.SELECT, "tags");
 		query.selectField("count(*)");
 		query.addCustomCondition("instr(tagID, \"global.\") = 0");
 		query.build();
@@ -370,7 +374,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public string read_preview(string articleID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("preview");
 		query.addEqualsCondition("articleID", articleID, true, true);
 		query.build();
@@ -399,7 +403,7 @@ public class FeedReader.dbBase : GLib.Object {
 		if(feedID == "")
 			return result;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("name");
 		query.addEqualsCondition("feed_id", feedID, true, true);
 		query.build();
@@ -423,7 +427,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public string? getTagName(string tagID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.tags");
+		var query = new QueryBuilder(QueryType.SELECT, "tags");
 		query.selectField("title");
 		query.addEqualsCondition("tagID", tagID, true, true);
 		query.build();
@@ -447,7 +451,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public int getLastModified()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("MAX(lastModified)");
 		query.build();
 
@@ -474,7 +478,7 @@ public class FeedReader.dbBase : GLib.Object {
 		if(catID == CategoryID.TAGS.to_string())
 			return "Tags";
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("title");
 		query.addEqualsCondition("categorieID", catID, true, true);
 		query.build();
@@ -502,7 +506,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public string? getCategoryID(string catname)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("categorieID");
 		query.addEqualsCondition("title", catname, true, true);
 		query.build();
@@ -527,7 +531,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public bool preview_empty(string articleID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("articleID", articleID, true, true);
 		query.addEqualsCondition("preview", "", false, true);
@@ -555,11 +559,98 @@ public class FeedReader.dbBase : GLib.Object {
 		return true;
 	}
 
-	public article read_article(string articleID)
+	public Gee.List<article> read_article_between(
+		string feedID,
+		FeedListType selectedType,
+		ArticleListState state,
+		string searchTerm,
+		string id1,
+		GLib.DateTime date1,
+		string id2,
+		GLib.DateTime date2)
+	{
+		var query = articleQuery(feedID, selectedType, state, searchTerm);
+		var sorting = (ArticleListSort)Settings.general().get_enum("articlelist-sort-by");
+
+		if(sorting == ArticleListSort.RECEIVED)
+			query.addCustomCondition(@"date BETWEEN (SELECT rowid FROM articles WHERE articleID = $id1) AND (SELECT rowid FROM articles WHERE articleID = $id2)");
+		else
+		{
+			bool bigger = (date1.to_unix() > date2.to_unix());
+			var biggerDate = (bigger) ? date1.to_unix() : date2.to_unix();
+			var smallerDate = (bigger) ? date2.to_unix() : date1.to_unix();
+			query.addCustomCondition(@"date BETWEEN $smallerDate AND $biggerDate");
+		}
+		query.build();
+
+		Sqlite.Statement stmt;
+		int ec = sqlite_db.prepare_v2(query.get(), query.get().length, out stmt);
+		if(ec != Sqlite.OK)
+		{
+			Logger.error(query.get());
+			Logger.error(sqlite_db.errmsg());
+		}
+
+		var tmp = new Gee.LinkedList<article>();
+		while (stmt.step () == Sqlite.ROW)
+		{
+			if(stmt.column_text(2) == id1
+			|| stmt.column_text(2) == id2)
+				continue;
+
+			tmp.add(new article(
+								stmt.column_text(2),								// articleID
+								stmt.column_text(3),								// title
+								stmt.column_text(5),								// url
+								stmt.column_text(1),								// feedID
+								(ArticleStatus)stmt.column_int(7),					// unread
+								(ArticleStatus)stmt.column_int(8),					// marked
+								"",													// html
+								stmt.column_text(6),								// preview
+								stmt.column_text(4),								// author
+								new GLib.DateTime.from_unix_local(stmt.column_int(10)),	// date
+								stmt.column_int(0),									// sortID
+								stmt.column_text(9),								// tags
+								stmt.column_text(12),								// media
+								stmt.column_text(11)								// guid
+							));
+		}
+		stmt.reset();
+		return tmp;
+	}
+
+	public Gee.HashMap<string, article> read_article_stats(Gee.List<string> ids)
+	{
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
+		query.selectField("articleID, unread, marked");
+		query.addRangeConditionString("articleID", ids);
+		query.build();
+
+		Sqlite.Statement stmt;
+		int ec = sqlite_db.prepare_v2(query.get(), query.get().length, out stmt);
+		if(ec != Sqlite.OK)
+		{
+			Logger.error(query.get());
+			Logger.error(sqlite_db.errmsg());
+		}
+
+		var articles = new Gee.HashMap<string, article>();
+
+		while(stmt.step() == Sqlite.ROW)
+		{
+			articles.set(stmt.column_text(0),
+								new article(stmt.column_text(0), "", "", "", (ArticleStatus)stmt.column_int(1),
+								(ArticleStatus)stmt.column_int(2), "", "", null, new GLib.DateTime.now_local(), 0, "", ""));
+		}
+		stmt.reset();
+		return articles;
+	}
+
+	public article? read_article(string articleID)
 	{
 		Logger.debug(@"dbBase.read_article(): $articleID");
-		article tmp = null;
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		article? tmp = null;
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("ROWID");
 		query.selectField("*");
 		query.addEqualsCondition("articleID", articleID, true, true);
@@ -586,7 +677,7 @@ public class FeedReader.dbBase : GLib.Object {
 								stmt.column_text(6),
 								stmt.column_text(7),
 								author,
-								Utils.convertStringToDate(stmt.column_text(11)),
+								new GLib.DateTime.from_unix_local(stmt.column_int(11)),
 								stmt.column_int(0), // rowid (sortid)
 								stmt.column_text(10), // tags
 								stmt.column_text(14), // media
@@ -600,7 +691,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public string read_article_tags(string articleID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("tags");
 		query.addEqualsCondition("articleID", articleID, true, true);
 		query.build();
@@ -624,7 +715,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		int maxCatLevel = 0;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("max(Level)");
 		query.build();
 
@@ -650,7 +741,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public bool haveFeedsWithoutCat()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("count(*)");
 		query.addCustomCondition(getUncategorizedQuery());
 		query.build();
@@ -674,7 +765,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public bool haveCategories()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("count(*)");
 		query.build();
 
@@ -743,7 +834,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		int result = 0;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addCustomCondition("date > \"%s\"".printf(date));
 		query.build();
@@ -764,38 +855,42 @@ public class FeedReader.dbBase : GLib.Object {
 	}
 
 
-	public int getArticleCountNewerThanID(string id, string ID, FeedListType selectedType, ArticleListState state, string searchTerm)
+	public int getArticleCountNewerThanID(string articleID, string feedID, FeedListType selectedType, ArticleListState state, string searchTerm, int searchRows = 0)
 	{
 		int result = 0;
+		string orderBy = ((ArticleListSort)Settings.general().get_enum("articlelist-sort-by") == ArticleListSort.RECEIVED) ? "rowid" : "date";
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
-		query.selectField("rowid");
-		query.addEqualsCondition("articleID", id, true, true);
-		query.build();
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
+		query.addEqualsCondition("articleID", articleID, true, true);
 
-		var query2 = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query2 = new QueryBuilder(QueryType.SELECT, "articles");
 		query2.selectField("count(*)");
 
-		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
-			query2.addCustomCondition("rowid < (%s)".printf(query.get()));
-		else
-			query2.addCustomCondition("rowid > (%s)".printf(query.get()));
 
-		if(selectedType == FeedListType.FEED && ID != FeedID.ALL.to_string())
+		query.selectField(orderBy);
+		query.build();
+
+		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
+			query2.addCustomCondition(@"$orderBy < (%s)".printf(query.get()));
+		else
+			query2.addCustomCondition(@"$orderBy > (%s)".printf(query.get()));
+
+
+		if(selectedType == FeedListType.FEED && feedID != FeedID.ALL.to_string())
 		{
-			query2.addEqualsCondition("feedID", ID, true, true);
+			query2.addEqualsCondition("feedID", feedID, true, true);
 		}
-		else if(selectedType == FeedListType.CATEGORY && ID != CategoryID.MASTER.to_string() && ID != CategoryID.TAGS.to_string())
+		else if(selectedType == FeedListType.CATEGORY && feedID != CategoryID.MASTER.to_string() && feedID != CategoryID.TAGS.to_string())
 		{
-			query2.addRangeConditionString("feedID", getFeedIDofCategorie(ID));
+			query2.addRangeConditionString("feedID", getFeedIDofCategorie(feedID));
 		}
-		else if(ID == CategoryID.TAGS.to_string())
+		else if(feedID == CategoryID.TAGS.to_string())
 		{
 			query2.addCustomCondition(getAllTagsCondition());
 		}
 		else if(selectedType == FeedListType.TAG)
 		{
-			query2.addCustomCondition("instr(tags, \"%s\") > 0".printf(ID));
+			query2.addCustomCondition("instr(tags, \"%s\") > 0".printf(feedID));
 		}
 
 		if(state == ArticleListState.UNREAD)
@@ -826,24 +921,20 @@ public class FeedReader.dbBase : GLib.Object {
 			}
 		}
 
-		string order_field = "";
-		switch(Settings.general().get_enum("articlelist-sort-by"))
+		bool desc = true;
+		string asc = "DESC";
+		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
 		{
-			case ArticleListSort.RECEIVED:
-				order_field = "rowid";
-				break;
-
-			case ArticleListSort.DATE:
-				order_field = "date";
-				break;
+			desc = false;
+			asc = "ASC";
 		}
 
-		bool desc = true;
-		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
-			desc = false;
+		if(searchRows != 0)
+			query.addCustomCondition(@"articleID in (SELECT articleID FROM articles ORDER BY $orderBy $asc LIMIT $searchRows)");
 
-		query2.orderBy(order_field, desc);
+		query2.orderBy(orderBy, desc);
 		query2.build();
+		query2.print();
 
 		Sqlite.Statement stmt;
 		int ec = sqlite_db.prepare_v2(query2.get(), query2.get().length, out stmt);
@@ -865,7 +956,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		var feedIDs = new Gee.ArrayList<string>();
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("feed_id, category_id");
 		query.build();
 
@@ -917,7 +1008,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		string sql = "feedID IN (%s)";
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("feed_id");
 		query.addCustomCondition(getUncategorizedQuery());
 		query.build();
@@ -962,7 +1053,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		string result = "";
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("articleID");
 		query.addEqualsCondition("rowid", "%i".printf(getHighestRowID()));
 		query.build();
@@ -985,7 +1076,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		int result = 0;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("max(rowid)");
 		query.build();
 
@@ -1008,7 +1099,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		string result = "0";
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("max(feed_id)");
 		query.build();
 
@@ -1031,21 +1122,29 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public feed? read_feed(string feedID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("*");
 		query.addEqualsCondition("feed_id", feedID, true, true);
 		query.build();
 
 		Sqlite.Statement stmt;
-		int ec = sqlite_db.prepare_v2 (query.get(), query.get().length, out stmt);
-		if (ec != Sqlite.OK)
+		int ec = sqlite_db.prepare_v2(query.get(), query.get().length, out stmt);
+		if(ec != Sqlite.OK)
 		{
 			Logger.error(query.get());
 			Logger.error(sqlite_db.errmsg());
 		}
 
-		while (stmt.step () == Sqlite.ROW) {
-			var tmpfeed = new feed(feedID, stmt.column_text(1), stmt.column_text(2), ((stmt.column_int(3) == 1) ? true : false), getFeedUnread(feedID), stmt.column_text(4).split(","));
+		while(stmt.step () == Sqlite.ROW)
+		{
+			var tmpfeed = new feed(
+				feedID,
+				stmt.column_text(1),
+				stmt.column_text(2),
+				getFeedUnread(feedID),
+				stmt.column_text(3).split(","),
+				null,
+				stmt.column_text(5));
 			return tmpfeed;
 		}
 
@@ -1058,7 +1157,7 @@ public class FeedReader.dbBase : GLib.Object {
 		Gee.ArrayList<feed> tmp = new Gee.ArrayList<feed>();
 		feed tmpfeed;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("*");
 		if(Settings.general().get_enum("feedlist-sort-by") == FeedListSort.ALPHABETICAL)
 		{
@@ -1076,9 +1175,8 @@ public class FeedReader.dbBase : GLib.Object {
 
 		while (stmt.step () == Sqlite.ROW) {
 			string feedID = stmt.column_text(0);
-			string catString = stmt.column_text(4);
-			string xmlURL = stmt.column_text(6);
-			bool has_icon = ((stmt.column_int(3) == 1) ? true : false);
+			string catString = stmt.column_text(3);
+			string xmlURL = stmt.column_text(5);
 			string url = stmt.column_text(2);
 			string name = stmt.column_text(1);
 			string[] catVec = { "" };
@@ -1092,7 +1190,7 @@ public class FeedReader.dbBase : GLib.Object {
 			else
 				count = getFeedUnread(feedID);
 
-			tmpfeed = new feed(feedID, name, url, has_icon, count, catVec, xmlURL);
+			tmpfeed = new feed(feedID, name, url, count, catVec, null, xmlURL);
 			tmp.add(tmpfeed);
 		}
 
@@ -1104,7 +1202,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		uint count = 0;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("unread", ArticleStatus.UNREAD.to_string());
 		query.addEqualsCondition("feedID", feedID, true, true);
@@ -1128,7 +1226,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		uint count = 0;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("count(*)");
 		query.addEqualsCondition("marked", ArticleStatus.MARKED.to_string());
 		query.addEqualsCondition("feedID", feedID, true, true);
@@ -1154,7 +1252,7 @@ public class FeedReader.dbBase : GLib.Object {
 		Gee.ArrayList<feed> tmp = new Gee.ArrayList<feed>();
 		feed tmpfeed;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.feeds");
+		var query = new QueryBuilder(QueryType.SELECT, "feeds");
 		query.selectField("*");
 		query.addCustomCondition(getUncategorizedQuery());
 		if(Settings.general().get_enum("feedlist-sort-by") == FeedListSort.ALPHABETICAL)
@@ -1173,15 +1271,14 @@ public class FeedReader.dbBase : GLib.Object {
 
 		while (stmt.step () == Sqlite.ROW) {
 			string feedID = stmt.column_text(0);
-			string catString = stmt.column_text(4);
-			string xmlURL = stmt.column_text(6);
-			bool has_icon = ((stmt.column_int(3) == 1) ? true : false);
+			string catString = stmt.column_text(3);
+			string xmlURL = stmt.column_text(5);
 			string url = stmt.column_text(2);
 			string name = stmt.column_text(1);
 			string[] catVec = { "" };
 			if(catString != "")
 				catVec = catString.split(",");
-			tmpfeed = new feed(feedID, name, url, has_icon, getFeedUnread(feedID), catVec, xmlURL);
+			tmpfeed = new feed(feedID, name, url, getFeedUnread(feedID), catVec, null, xmlURL);
 			tmp.add(tmpfeed);
 		}
 
@@ -1190,7 +1287,7 @@ public class FeedReader.dbBase : GLib.Object {
 
 	public category? read_category(string catID)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("*");
 		query.addEqualsCondition("categorieID", catID, true, true);
 		query.build();
@@ -1217,7 +1314,7 @@ public class FeedReader.dbBase : GLib.Object {
 		Gee.ArrayList<tag> tmp = new Gee.ArrayList<tag>();
 		tag tmpTag;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.tags");
+		var query = new QueryBuilder(QueryType.SELECT, "tags");
 		query.selectField("*");
 		query.addCustomCondition("instr(tagID, \"global.\") = 0");
 		query.build();
@@ -1242,7 +1339,7 @@ public class FeedReader.dbBase : GLib.Object {
 	{
 		tag tmpTag = null;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.tags");
+		var query = new QueryBuilder(QueryType.SELECT, "tags");
 		query.selectField("*");
 		query.addEqualsCondition("tagID", tagID, true, true);
 		query.build();
@@ -1278,7 +1375,7 @@ public class FeedReader.dbBase : GLib.Object {
 	public int getTagCount()
 	{
 		int count = 0;
-		var query = new QueryBuilder(QueryType.SELECT, "main.tags");
+		var query = new QueryBuilder(QueryType.SELECT, "tags");
 		query.addCustomCondition("instr(tagID, \"global.\") = 0");
 		query.selectField("count(*)");
 		query.build();
@@ -1341,7 +1438,7 @@ public class FeedReader.dbBase : GLib.Object {
 		Gee.ArrayList<category> tmp = new Gee.ArrayList<category>();
 		category tmpcategory;
 
-		var query = new QueryBuilder(QueryType.SELECT, "main.categories");
+		var query = new QueryBuilder(QueryType.SELECT, "categories");
 		query.selectField("*");
 
 		if(Settings.general().get_enum("feedlist-sort-by") == FeedListSort.ALPHABETICAL)
@@ -1384,9 +1481,9 @@ public class FeedReader.dbBase : GLib.Object {
 		return tmp;
 	}
 
-	public Gee.LinkedList<article> readUnfetchedArticles()
+	public Gee.List<article> readUnfetchedArticles()
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("articleID");
 		query.selectField("url");
 		query.selectField("preview");
@@ -1418,7 +1515,7 @@ public class FeedReader.dbBase : GLib.Object {
 								stmt.column_text(3),								// html
 								stmt.column_text(2),								// preview
 								"",													// author
-								Utils.convertStringToDate("2016-10-08 22:57:00"),	// date
+								new GLib.DateTime.now_local(),						// date
 								0,													// sortID
 								"",													// tags
 								"",													// media
@@ -1429,9 +1526,11 @@ public class FeedReader.dbBase : GLib.Object {
 		return tmp;
 	}
 
-	public Gee.LinkedList<article> read_articles(string ID, FeedListType selectedType, ArticleListState state, string searchTerm, uint limit = 20, uint offset = 0, int searchRows = 0)
+	public QueryBuilder articleQuery(string id, FeedListType selectedType, ArticleListState state, string searchTerm)
 	{
-		var query = new QueryBuilder(QueryType.SELECT, "main.articles");
+		string orderBy = ((ArticleListSort)Settings.general().get_enum("articlelist-sort-by") == ArticleListSort.RECEIVED) ? "rowid" : "date";
+
+		var query = new QueryBuilder(QueryType.SELECT, "articles");
 		query.selectField("ROWID");
 		query.selectField("feedID");
 		query.selectField("articleID");
@@ -1446,21 +1545,21 @@ public class FeedReader.dbBase : GLib.Object {
 		query.selectField("guidHash");
 		query.selectField("media");
 
-		if(selectedType == FeedListType.FEED && ID != FeedID.ALL.to_string())
+		if(selectedType == FeedListType.FEED && id != FeedID.ALL.to_string())
 		{
-			query.addEqualsCondition("feedID", ID, true, true);
+			query.addEqualsCondition("feedID", id, true, true);
 		}
-		else if(selectedType == FeedListType.CATEGORY && ID != CategoryID.MASTER.to_string() && ID != CategoryID.TAGS.to_string())
+		else if(selectedType == FeedListType.CATEGORY && id != CategoryID.MASTER.to_string() && id != CategoryID.TAGS.to_string())
 		{
-			query.addRangeConditionString("feedID", getFeedIDofCategorie(ID));
+			query.addRangeConditionString("feedID", getFeedIDofCategorie(id));
 		}
-		else if(ID == CategoryID.TAGS.to_string())
+		else if(id == CategoryID.TAGS.to_string())
 		{
 			query.addCustomCondition(getAllTagsCondition());
 		}
 		else if(selectedType == FeedListType.TAG)
 		{
-			query.addCustomCondition("instr(tags, \"%s\") > 0".printf(ID));
+			query.addCustomCondition("instr(tags, \"%s\") > 0".printf(id));
 		}
 
 		if(state == ArticleListState.UNREAD)
@@ -1491,28 +1590,29 @@ public class FeedReader.dbBase : GLib.Object {
 			}
 		}
 
-		if(searchRows != 0)
-		{
-			query.addCustomCondition("articleID in (SELECT articleID FROM main.articles ORDER BY rowid DESC LIMIT %i)".printf(searchRows));
-		}
-
-		string order_field = "";
-		switch(Settings.general().get_enum("articlelist-sort-by"))
-		{
-			case ArticleListSort.RECEIVED:
-				order_field = "rowid";
-				break;
-
-			case ArticleListSort.DATE:
-				order_field = "date";
-				break;
-		}
-
 		bool desc = true;
 		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
 			desc = false;
 
-		query.orderBy(order_field, desc);
+		query.orderBy(orderBy, desc);
+
+		return query;
+	}
+
+	public Gee.List<article> read_articles(string id, FeedListType selectedType, ArticleListState state, string searchTerm, uint limit = 20, uint offset = 0, int searchRows = 0)
+	{
+		var query = articleQuery(id, selectedType, state, searchTerm);
+
+		string desc = "DESC";
+		if(Settings.general().get_boolean("articlelist-oldest-first") && state == ArticleListState.UNREAD)
+			desc = "ASC";
+
+		if(searchRows != 0)
+		{
+			string orderBy = ((ArticleListSort)Settings.general().get_enum("articlelist-sort-by") == ArticleListSort.RECEIVED) ? "rowid" : "date";
+			query.addCustomCondition(@"articleID in (SELECT articleID FROM articles ORDER BY $orderBy $desc LIMIT $searchRows)");
+		}
+
 		query.limit(limit);
 		query.offset(offset);
 		query.build();
@@ -1541,7 +1641,7 @@ public class FeedReader.dbBase : GLib.Object {
 								"",													// html
 								stmt.column_text(6),								// preview
 								stmt.column_text(4),								// author
-								Utils.convertStringToDate(stmt.column_text(10)),	// date
+								new GLib.DateTime.from_unix_local(stmt.column_int(10)),	// date
 								stmt.column_int(0),									// sortID
 								stmt.column_text(9),								// tags
 								stmt.column_text(12),								// media

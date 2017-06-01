@@ -16,10 +16,14 @@
 public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface {
 
 	private localUtils m_utils;
+	private Soup.Session m_session;
 
 	public void init()
 	{
 		m_utils = new localUtils();
+		m_session = new Soup.Session();
+		m_session.user_agent = Constants.USER_AGENT;
+		m_session.timeout = 5;
 	}
 
 
@@ -53,7 +57,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		return "0";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string catID)
+	public bool hideCategoryWhenEmpty(string catID)
 	{
 		return false;
 	}
@@ -123,7 +127,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		return;
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		return;
 	}
@@ -164,7 +168,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		return;
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
 		string[] catIDs = {};
 
@@ -186,7 +190,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 			catIDs += "0";
 		}
 
-		string feedID = "feedID00001";
+		feedID = "feedID00001";
 
 		if(!dbDaemon.get_default().isTableEmpty("feeds"))
 		{
@@ -194,20 +198,20 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		}
 
 		Logger.info(@"addFeed: ID = $feedID");
-		feed? Feed = m_utils.downloadFeed(feedURL, feedID, catIDs);
+		feed? Feed = m_utils.downloadFeed(m_session, feedURL, feedID, catIDs, out errmsg);
 
 		if(Feed != null)
 		{
 			var list = new Gee.LinkedList<feed>();
 			list.add(Feed);
 			dbDaemon.get_default().write_feeds(list);
-			return feedID;
+			return true;
 		}
 
-		return "";
+		return false;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
 		var finishedFeeds = new Gee.LinkedList<feed>();
 
@@ -222,7 +226,8 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 			highestID++;
 
 			Logger.info(@"addFeed: ID = $feedID");
-			feed? Feed = m_utils.downloadFeed(f.getXmlUrl(), feedID, f.getCatIDs());
+			string errmsg = "";
+			feed? Feed = m_utils.downloadFeed(m_session, f.getXmlUrl(), feedID, f.getCatIDs(), out errmsg);
 
 			if(Feed != null)
 			{
@@ -306,7 +311,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		parser.parse();
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
 		var cats = dbDaemon.get_default().read_categories();
 		foreach(category cat in cats)
@@ -323,7 +328,12 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		var f = dbDaemon.get_default().read_feeds();
 		foreach(feed Feed in f)
 		{
-			feeds.add(Feed);
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			string errmsg = "";
+			feed? tmpFeed = m_utils.downloadFeed(m_session, Feed.getXmlUrl(), Feed.getFeedID(), Feed.getCatIDs(), out errmsg);
+			feeds.add((tmpFeed == null) ? Feed : tmpFeed);
 		}
 
 		return true;
@@ -334,13 +344,16 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		return 0;
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 		var f = dbDaemon.get_default().read_feeds();
 		var articleArray = new Gee.LinkedList<article>();
 
 		foreach(feed Feed in f)
 		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
 			Logger.debug("getArticles for feed: " + Feed.getTitle());
 			string url = Feed.getXmlUrl().escape("");
 
@@ -350,11 +363,8 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 				continue;
 			}
 
-			var session = new Soup.Session();
-			session.user_agent = Constants.USER_AGENT;
-			session.timeout = 5;
 			var msg = new Soup.Message("GET", url);
-			session.send_message(msg);
+			m_session.send_message(msg);
 			string xml = (string)msg.response_body.flatten().data;
 
 			// parse
@@ -399,9 +409,9 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 
 				if(item.pub_date != null)
 				{
-                	GLib.Time time = GLib.Time();
-                	time.strptime(item.pub_date, "%a, %d %b %Y %H:%M:%S %Z");
-                	date = new GLib.DateTime.local(1900 + time.year, 1 + time.month, time.day, time.hour, time.minute, time.second);
+					GLib.Time time = GLib.Time();
+					time.strptime(item.pub_date, "%a, %d %b %Y %H:%M:%S %Z");
+					date = new GLib.DateTime.local(1900 + time.year, 1 + time.month, time.day, time.hour, time.minute, time.second);
 
 					if(date == null)
 						date = new GLib.DateTime.now_local();
@@ -418,6 +428,9 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 				string articleURL = item.link;
 				if(articleURL.has_prefix("/"))
 					articleURL = Feed.getURL() + articleURL.substring(1);
+
+				if(item.title != null)
+					Logger.debug(item.title);
 
 				var Article = new article
 				(
@@ -448,7 +461,7 @@ public class FeedReader.localInterface : Peas.ExtensionBase, FeedServerInterface
 		{
 			dbDaemon.get_default().write_articles(articleArray);
 			Logger.debug("localInterface: %i articles written".printf(articleArray.size));
-			updateFeedList();
+			refreshFeedListCounter();
 			updateArticleList();
 		}
 	}

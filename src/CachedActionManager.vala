@@ -126,7 +126,7 @@ public class FeedReader.CachedActionManager : GLib.Object {
 					FeedServer.get_default().setFeedRead(action.getID());
 					break;
 				case CachedActions.MARK_READ_CATEGORY:
-					FeedServer.get_default().setCategorieRead(action.getID());
+					FeedServer.get_default().setCategoryRead(action.getID());
 					break;
 				case CachedActions.MARK_READ_ALL:
 					FeedServer.get_default().markAllItemsRead();
@@ -140,6 +140,8 @@ public class FeedReader.CachedActionManager : GLib.Object {
 		{
 			execute(m_ids.substring(1), m_lastAction);
 		}
+
+		dbDaemon.get_default().resetCachedActions();
 	}
 
 	private void execute(string ids, CachedActions action)

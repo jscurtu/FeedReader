@@ -24,6 +24,7 @@ namespace FeedReader {
 		private Unity.LauncherEntry m_launcher;
 #endif
 		private LoginResponse m_loggedin;
+		private GLib.Cancellable m_cancellable;
 		private bool m_offline = true;
 		private bool m_cacheSync = false;
 		private uint m_timeout_source_id = 0;
@@ -34,13 +35,13 @@ namespace FeedReader {
 		public signal void springCleanStarted();
 		public signal void springCleanFinished();
 		public signal void newFeedList();
-		public signal void updateFeedList();
+		public signal void refreshFeedListCounter();
 		public signal void updateArticleList();
-		public signal void writeInterfaceState();
+		public signal void reloadFavIcons();
 		public signal void showArticleListOverlay();
 		public signal void setOffline();
 		public signal void setOnline();
-		public signal void feedAdded();
+		public signal void feedAdded(bool error, string errmsg);
 		public signal void opmlImported();
 		public signal void updateSyncProgress(string progress);
 
@@ -57,32 +58,50 @@ namespace FeedReader {
 		private FeedDaemonServer()
 		{
 			Logger.debug("daemon: constructor");
-			login(Settings.general().get_string("plugin"));
+			var plugID = Settings.general().get_string("plugin");
+
+			if(plugID == "none")
+				m_loggedin = LoginResponse.NO_BACKEND;
+			else
+				login(plugID);
 
 #if WITH_LIBUNITY
 			m_launcher = Unity.LauncherEntry.get_for_desktop_id("org.gnome.FeedReader.desktop");
 			updateBadge();
 #endif
+			m_cancellable = new GLib.Cancellable();
 			scheduleSync(Settings.general().get_int("sync"));
-		}
 
-		public void startSync()
-		{
-			callAsync.begin(sync, (obj, res) => {
-				callAsync.begin.end(res);
+			GLib.NetworkMonitor.get_default().network_changed.connect((available) => {
+				if(available)
+				{
+					checkOnline();
+				}
+				else
+				{
+					setOffline();
+				}
 			});
 		}
 
-		public void startInitSync()
+		public void startSync(bool initSync = false)
 		{
-			callAsync.begin(initSync, (obj, res) => {
-				callAsync.begin.end(res);
+			m_cancellable.reset();
+			asyncPayload pl = () => { sync(initSync, m_cancellable); };
+			callAsync.begin((owned)pl, (obj, res) => {
+				callAsync.end(res);
 			});
 		}
 
-		public int getVersion()
+		public void cancelSync()
 		{
-			return Constants.DBusAPIVersion;
+			Logger.warning("Daemon: Cancel current sync");
+			m_cancellable.cancel();
+		}
+
+		public string getVersion()
+		{
+			return AboutInfo.version;
 		}
 
 
@@ -127,9 +146,9 @@ namespace FeedReader {
 			return FeedServer.get_default().uncategorizedID();
 		}
 
-		public bool hideCagetoryWhenEmtpy(string catID)
+		public bool hideCategoryWhenEmpty(string catID)
 		{
-			return FeedServer.get_default().hideCagetoryWhenEmtpy(catID);
+			return FeedServer.get_default().hideCategoryWhenEmpty(catID);
 		}
 
 		public bool useMaxArticles()
@@ -145,19 +164,29 @@ namespace FeedReader {
 				m_timeout_source_id = 0;
 			}
 
+			if(time == 0)
+				return;
+
 			m_timeout_source_id = GLib.Timeout.add_seconds_full(GLib.Priority.DEFAULT, time*60, () => {
 				if(!Settings.state().get_boolean("currently-updating")
 				&& FeedServer.get_default().pluginLoaded())
 				{
 			   		Logger.debug("daemon: Timeout!");
-					startSync();
+					startSync(false);
 				}
 				return true;
 			});
 		}
 
-		private void sync()
+		private void sync(bool initSync = false, GLib.Cancellable? cancellable = null)
 		{
+			if(Settings.state().get_boolean("currently-updating")
+			|| Settings.state().get_boolean("spring-cleaning"))
+			{
+				Logger.debug("Cant sync because login failed or sync/clean already ongoing");
+				return;
+			}
+
 			if(Utils.springCleaningNecessary())
 			{
 				Logger.info("daemon: spring cleaning");
@@ -168,49 +197,56 @@ namespace FeedReader {
 				springCleanFinished();
 			}
 
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
+			Logger.info("daemon: sync started");
 			syncStarted();
+			Settings.state().set_boolean("currently-updating", true);
 
-
-			if(!checkOnline())
+			if(!checkOnline()
+			|| (cancellable != null && cancellable.is_cancelled()))
 			{
-				syncFinished();
+				finishSync();
 				return;
 			}
 
-			if(m_loggedin != LoginResponse.SUCCESS)
+			m_cacheSync = true;
+
+			if(initSync && FeedServer.get_default().doInitSync())
+				FeedServer.get_default().InitSyncContent(cancellable);
+			else
+				FeedServer.get_default().syncContent(cancellable);
+
+			if(cancellable != null && cancellable.is_cancelled())
 			{
-				login(Settings.general().get_string("plugin"));
-				if(m_loggedin != LoginResponse.SUCCESS)
-				{
-					setOffline();
-					syncFinished();
-					return;
-				}
+				finishSync();
+				return;
 			}
 
-			if(m_loggedin == LoginResponse.SUCCESS && Settings.state().get_boolean("currently-updating") == false)
-			{
-				Logger.info("daemon: sync started");
-				m_cacheSync = true;
-				Settings.state().set_boolean("currently-updating", true);
-				FeedServer.get_default().syncContent();
-				updateBadge();
-				m_cacheSync = false;
-				FeedServer.get_default().grabContent();
-				Settings.state().set_boolean("currently-updating", false);
-				Settings.state().set_string("sync-status", "");
-				syncFinished();
-				Logger.info("daemon: sync finished");
-			}
-			else
-			{
-				Logger.debug("Cant sync because login failed or sync already ongoing");
-			}
+			updateBadge();
+			m_cacheSync = false;
+			FeedServer.get_default().grabContent(cancellable);
+			finishSync();
+		}
+
+		private void finishSync()
+		{
+			Settings.state().set_boolean("currently-updating", false);
+			Settings.state().set_string("sync-status", "");
+			Logger.info("daemon: sync finished/cancelled");
+			syncFinished();
 		}
 
 		public bool checkOnline()
 		{
 			Logger.debug("Daemon: checkOnline");
+
+			if(GLib.NetworkMonitor.get_default().get_connectivity() != GLib.NetworkConnectivity.FULL)
+			{
+				Logger.error("Daemon: no network available");
+			}
+
 			if(!FeedServer.get_default().serverAvailable())
 			{
 				m_loggedin = LoginResponse.UNKNOWN_ERROR;
@@ -222,6 +258,11 @@ namespace FeedReader {
 			{
 				FeedServer.get_default().logout();
 				login(Settings.general().get_string("plugin"));
+				if(m_loggedin != LoginResponse.SUCCESS)
+				{
+					setOffline();
+					return false;
+				}
 			}
 
 			setOnline();
@@ -231,6 +272,9 @@ namespace FeedReader {
 
 		public async bool checkOnlineAsync()
 		{
+			if(!FeedServer.get_default().pluginLoaded())
+				return false;
+
 			Logger.debug("Daemon: checkOnlineAsync");
 			bool online = false;
 			SourceFunc callback = checkOnlineAsync.callback;
@@ -245,39 +289,12 @@ namespace FeedReader {
 			return online;
 		}
 
-
-		private void initSync()
-		{
-			if(!FeedServer.get_default().doInitSync())
-				return;
-
-			if(m_loggedin != LoginResponse.SUCCESS)
-			{
-				login(Settings.general().get_string("plugin"));
-			}
-
-			if(m_loggedin == LoginResponse.SUCCESS && Settings.state().get_boolean("currently-updating") == false)
-			{
-				syncStarted();
-				Logger.info("daemon: initSync started");
-				Settings.state().set_boolean("currently-updating", true);
-				FeedServer.get_default().InitSyncContent();
-				updateBadge();
-				FeedServer.get_default().grabContent();
-				Settings.state().set_boolean("currently-updating", false);
-				Settings.state().set_string("sync-status", "");
-				syncFinished();
-				Logger.info("daemon: initSync finished");
-			}
-			else
-				Logger.debug("Cant sync because login failed or sync already ongoing");
-		}
-
 		public LoginResponse login(string plugName)
 		{
 			Logger.debug("daemon: new FeedServer and login");
 
-			FeedServer.get_default().unloadPlugin();
+			if(FeedServer.get_default().pluginLoaded())
+				FeedServer.get_default().unloadPlugin();
 			FeedServer.get_default().loadPlugin(plugName);
 
 			if(!FeedServer.get_default().pluginLoaded())
@@ -292,35 +309,7 @@ namespace FeedReader {
 			});
 			this.setOnline.connect(() => {
 				m_offline = false;
-				if(dbDaemon.get_default().isTableEmpty("CachedActions"))
-				{
-					CachedActionManager.get_default().executeActions();
-					dbDaemon.get_default().resetCachedActions();
-				}
-			});
-
-			FeedServer.get_default().newFeedList.connect(() => {
-				newFeedList();
-			});
-
-			FeedServer.get_default().updateFeedList.connect(() => {
-				updateFeedList();
-			});
-
-			FeedServer.get_default().updateArticleList.connect(() => {
-				updateArticleList();
-			});
-
-			FeedServer.get_default().writeInterfaceState.connect(() => {
-				writeInterfaceState();
-			});
-
-			FeedServer.get_default().showArticleListOverlay.connect(() => {
-				showArticleListOverlay();
-			});
-
-			FeedServer.get_default().updateSyncProgress.connect((progress) => {
-				updateSyncProgress(progress);
+				CachedActionManager.get_default().executeActions();
 			});
 
 			m_loggedin = FeedServer.get_default().login();
@@ -361,7 +350,7 @@ namespace FeedReader {
 
 		public void changeArticle(string articleID, ArticleStatus status)
 		{
-			Logger.debug("Daemon: changeArticle %s %s".printf(articleID, status.to_string()));
+			Logger.debug("daemon: changeArticle %s %s".printf(articleID, status.to_string()));
 			if(status == ArticleStatus.READ || status == ArticleStatus.UNREAD)
 			{
 				bool increase = true;
@@ -394,7 +383,7 @@ namespace FeedReader {
 				asyncPayload pl = () => { dbDaemon.get_default().update_article(articleID, "unread", status); };
 				callAsync.begin((owned)pl, (obj, res) => {
 					callAsync.end(res);
-					updateFeedList();
+					refreshFeedListCounter();
 					updateBadge();
 				});
 			}
@@ -414,7 +403,7 @@ namespace FeedReader {
 				asyncPayload pl = () => { dbDaemon.get_default().update_article(articleID, "marked", status); };
 				callAsync.begin((owned)pl, (obj, res) => {
 					callAsync.end(res);
-					updateFeedList();
+					refreshFeedListCounter();
 				});
 			}
 		}
@@ -558,7 +547,7 @@ namespace FeedReader {
 				{
 					if(m_cacheSync)
 						ActionCache.get_default().markCategoryRead(feedID);
-					asyncPayload pl = () => { FeedServer.get_default().setCategorieRead(feedID); };
+					asyncPayload pl = () => { FeedServer.get_default().setCategoryRead(feedID); };
 					callAsync.begin((owned)pl, (obj, res) => { callAsync.end(res); });
 				}
 
@@ -682,6 +671,8 @@ namespace FeedReader {
 					removeCategoryWithChildren(catID);
 				}
 			}
+
+			removeCategory(catID);
 		}
 
 		private void deleteFeedsofCat(string catID, Gee.ArrayList<feed> feeds)
@@ -731,10 +722,13 @@ namespace FeedReader {
 			});
 		}
 
-		public void addFeed(string feedURL, string cat, bool isID, bool asynchron = true)
+		public void addFeed(string feedURL, string cat, bool isID, bool asynchron)
 		{
-			string catID = null;
-			string newCatName = null;
+			string? catID = null;
+			string? newCatName = null;
+			string? feedID = null;
+			bool success = false;
+			string errmsg = "";
 
 			if(cat != "")
 			{
@@ -746,16 +740,21 @@ namespace FeedReader {
 
 			if(asynchron)
 			{
-				asyncPayload pl = () => { FeedServer.get_default().addFeed(feedURL, catID, newCatName); };
-				callAsync.begin((owned)pl, (obj, res) => {
-					callAsync.end(res);
-					feedAdded();
-					startSync();
+				new GLib.Thread<void*>(null, () => {
+					success = FeedServer.get_default().addFeed(feedURL, catID, newCatName, out feedID, out errmsg);
+					errmsg = (success) ? "" : errmsg; // just to be sure :P
+					feedAdded(!success, errmsg);
+
+					if(success)
+						startSync();
+					return null;
 				});
 			}
 			else
 			{
-				FeedServer.get_default().addFeed(feedURL, catID, newCatName);
+				success = FeedServer.get_default().addFeed(feedURL, catID, newCatName, out feedID, out errmsg);
+				errmsg = (success) ? "" : errmsg;
+				feedAdded(!success, errmsg);
 			}
 		}
 
@@ -871,6 +870,8 @@ namespace FeedReader {
 
 	int main(string[] args)
 	{
+		Ivy.Stacktrace.register_handlers();
+
 		try
 		{
 			var opt_context = new GLib.OptionContext();
@@ -894,7 +895,7 @@ namespace FeedReader {
 		{
 			var old_stdout =(owned)stdout;
 			stdout = FileStream.open("/dev/null", "w");
-			Logger.init("daemon");
+			Logger.init();
 			stdout =(owned)old_stdout;
 			stdout.printf("%u\n", dbDaemon.get_default().get_unread_total());
 			return 0;
@@ -902,26 +903,26 @@ namespace FeedReader {
 
 		if(grabImages != null && articleUrl != null)
 		{
-			Logger.init("daemon");
+			Logger.init();
 			FeedServer.grabImages(grabImages, articleUrl);
 			return 0;
 		}
 
 		if(grabArticle != null)
 		{
-			Logger.init("daemon");
+			Logger.init();
 			FeedServer.grabArticle(grabArticle);
 			return 0;
 		}
 
-		Logger.init("daemon");
+		Logger.init();
 		Notification.init();
 		Utils.copyAutostart();
 
 		Logger.info("FeedReader Daemon " + AboutInfo.version);
 
-		if(dbDaemon.get_default().uninitialized())
-			dbDaemon.get_default().init();
+		// just here to trigger initialization
+		dbDaemon.get_default();
 
 		Bus.own_name (BusType.SESSION, "org.gnome.FeedReader.Daemon", BusNameOwnerFlags.NONE,
 				      on_bus_aquired,

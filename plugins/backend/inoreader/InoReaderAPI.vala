@@ -53,12 +53,18 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 
 	private bool getUserID()
 	{
-		string response = m_connection.send_request("user-info");
+		var response = m_connection.send_request("user-info");
+
+		if(response.status != 200)
+			return false;
+
 		var parser = new Json.Parser();
-		try{
-			parser.load_from_data(response, -1);
+		try
+		{
+			parser.load_from_data(response.data, -1);
 		}
-		catch (Error e) {
+		catch(Error e)
+		{
 			Logger.error("getUserID: Could not load message response");
 			Logger.error(e.message);
 			return false;
@@ -83,18 +89,20 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 		return false;
 	}
 
-	public bool getFeeds(Gee.LinkedList<feed> feeds)
+	public bool getFeeds(Gee.List<feed> feeds)
 	{
-		string response = m_connection.send_request("subscription/list");
+		var response = m_connection.send_request("subscription/list");
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
-		try{
-			parser.load_from_data(response, -1);
+		try
+		{
+			parser.load_from_data(response.data, -1);
 		}
-		catch (Error e) {
+		catch(Error e)
+		{
 			Logger.error("getFeeds: Could not load message response");
 			Logger.error(e.message);
 			return false;
@@ -109,12 +117,7 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 
 			string feedID = object.get_string_member("id");
 			string url = object.has_member("htmlUrl") ? object.get_string_member("htmlUrl") : object.get_string_member("url");
-			string icon_url = object.has_member("iconUrl") ? object.get_string_member("iconUrl") : "";
-
-			if(icon_url != "" && !m_utils.downloadIcon(feedID, icon_url))
-			{
-				icon_url = "";
-			}
+			string? icon_url = object.has_member("iconUrl") ? object.get_string_member("iconUrl") : null;
 
 			string title = "No Title";
 			if(object.has_member("title"))
@@ -139,9 +142,9 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 						feedID,
 						title,
 						url,
-						(icon_url == "") ? false : true,
 						0,
-						categories
+						categories,
+						icon_url
 					)
 			);
 		}
@@ -149,16 +152,16 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 		return true;
 	}
 
-	public bool getCategoriesAndTags(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getCategoriesAndTags(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags)
 	{
-		string response = m_connection.send_request("tag/list");
+		var response = m_connection.send_request("tag/list");
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
 		try{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e) {
 			Logger.error("getCategoriesAndTags: Could not load message response");
@@ -212,11 +215,14 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 
 	public int getTotalUnread()
 	{
-		string response = m_connection.send_request("unread-count");
+		var response = m_connection.send_request("unread-count");
+
+		if(response.status != 200)
+			return 0;
 
 		var parser = new Json.Parser();
 		try{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e) {
 			Logger.error("getTotalUnread: Could not load message response");
@@ -243,20 +249,25 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 	}
 
 
-	public string? updateArticles(Gee.LinkedList<string> ids, int count, string? continuation = null)
+	public string? updateArticles(Gee.List<string> ids, int count, string? continuation = null)
 	{
 		var message_string = "n=" + count.to_string();
 		message_string += "&xt=user/-/state/com.google/read";
 		if(continuation != null)
 			message_string += "&c=" + continuation;
-		string response = m_connection.send_request("stream/items/ids", message_string);
+		var response = m_connection.send_request("stream/items/ids", message_string);
+
+		if(response.status != 200)
+			return null;
 
 		var parser = new Json.Parser();
-		try{
-			parser.load_from_data(response, -1);
+		try
+		{
+			parser.load_from_data(response.data, -1);
 		}
-		catch (Error e) {
-			Logger.error("getCategoriesAndTags: Could not load message response");
+		catch(Error e)
+		{
+			Logger.error("updateArticles: Could not load message response");
 			Logger.error(e.message);
 		}
 
@@ -278,7 +289,7 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 		return null;
 	}
 
-	public string? getArticles(Gee.LinkedList<article> articles, int count, ArticleStatus whatToGet = ArticleStatus.ALL, string? continuation = null, string? tagID = null, string? feed_id = null)
+	public string? getArticles(Gee.List<article> articles, int count, ArticleStatus whatToGet = ArticleStatus.ALL, string? continuation = null, string? tagID = null, string? feed_id = null)
 	{
 		var message_string = "n=" + count.to_string();
 
@@ -298,14 +309,19 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 			api_endpoint += "/" + GLib.Uri.escape_string(feed_id);
 		else if(tagID != null)
 			api_endpoint += "/" + GLib.Uri.escape_string(tagID);
-		string response = m_connection.send_request(api_endpoint, message_string);
+		var response = m_connection.send_request(api_endpoint, message_string);
+
+		if(response.status != 200)
+			return null;
 
 		var parser = new Json.Parser();
-		try{
-			parser.load_from_data(response, -1);
+		try
+		{
+			parser.load_from_data(response.data, -1);
 		}
-		catch (Error e) {
-			Logger.error("getCategoriesAndTags: Could not load message response");
+		catch(Error e)
+		{
+			Logger.error("getArticles: Could not load message response");
 			Logger.error(e.message);
 		}
 
@@ -424,7 +440,7 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 		m_connection.send_request("rename-tag", message_string);
 	}
 
-	public void editSubscription(InoSubscriptionAction action, string[] feedID, string? title = null, string? add = null, string? remove = null)
+	public bool editSubscription(InoSubscriptionAction action, string[] feedID, string? title, string? add, string? remove)
 	{
 		var message_string = "ac=";
 
@@ -454,6 +470,6 @@ public class FeedReader.InoReaderAPI : GLib.Object {
 			message_string += "&r=" + remove;
 
 
-		m_connection.send_request("subscription/edit", message_string);
+		return m_connection.send_request("subscription/edit", message_string).status == 200;
 	}
 }

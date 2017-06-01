@@ -28,23 +28,30 @@ public class FeedReader.feedbinAPI : Object {
 	{
 		Logger.debug("feedbin backend: login");
 
-		if(!Utils.ping("https://feedbin.com/"))
+		if(!Utils.ping("https://api.feedbin.com/"))
 			return LoginResponse.NO_CONNECTION;
 
-		return LoginResponse.SUCCESS;
+		var status = m_connection.getRequest("authentication.json").status;
+		if(status == 200)
+			return LoginResponse.SUCCESS;
+		else if(status == 401)
+			return LoginResponse.WRONG_LOGIN;
+
+		Logger.error("Got status %u from Feedbin authentication.json".printf(status));
+		return LoginResponse.UNKNOWN_ERROR;
 	}
 
-	public bool getSubscriptionList(Gee.LinkedList<feed> feeds)
+	public bool getSubscriptionList(Gee.List<feed> feeds)
 	{
-		string response = m_connection.getRequest("subscriptions.json");
+		var response = m_connection.getRequest("subscriptions.json");
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e)
 		{
@@ -77,9 +84,9 @@ public class FeedReader.feedbinAPI : Object {
 					id,
 					title,
 					url,
-					Utils.downloadIcon(id, url),
 					0,
 					{ "0" },
+					null,
 					xmlURL)
 			);
 		}
@@ -87,17 +94,17 @@ public class FeedReader.feedbinAPI : Object {
 		return true;
 	}
 
-	public bool getTaggings(Gee.LinkedList<category> categories, Gee.LinkedList<feed> feeds)
+	public bool getTaggings(Gee.List<category> categories, Gee.List<feed> feeds)
 	{
-		string response = m_connection.getRequest("taggings.json");
+		var response = m_connection.getRequest("taggings.json");
 
-		if(response == "" || response == null)
+		if(response.status != 200)
 			return false;
 
 		var parser = new Json.Parser();
 		try
 		{
-			parser.load_from_data(response, -1);
+			parser.load_from_data(response.data, -1);
 		}
 		catch (Error e)
 		{
@@ -145,11 +152,12 @@ public class FeedReader.feedbinAPI : Object {
 
 
 
-	public int getEntries(Gee.LinkedList<article> articles, int page, bool starred, DateTime? timestamp, string? feedID = null)
+	public Gee.List<article> getEntries(int page, bool onlyStarred, Gee.Set<string> unreadIDs, Gee.Set<string> starredIDs, DateTime? timestamp, string? feedID = null)
 	{
+		Gee.List<article> articles = new Gee.ArrayList<article>();
 		string request = "entries.json?per_page=100";
 		request += "&page=%i".printf(page);
-		request += "&starred=%s".printf(starred ? "true" : "false");
+		request += "&starred=%s".printf(onlyStarred ? "true" : "false");
 		if(timestamp != null)
 		{
 			var t = GLib.TimeVal();
@@ -166,7 +174,7 @@ public class FeedReader.feedbinAPI : Object {
 
 		Logger.debug(request);
 
-		string response = m_connection.getRequest(request);
+		string response = m_connection.getRequest(request).data;
 
 		var parser = new Json.Parser();
 		try
@@ -178,14 +186,14 @@ public class FeedReader.feedbinAPI : Object {
 			Logger.error("getEntries: Could not load message response");
 			Logger.error(e.message);
 			Logger.error(response);
+			return articles;
 		}
 
 		var root = parser.get_root();
-
 		if(root.get_node_type() != Json.NodeType.ARRAY)
 		{
 			Logger.error(response);
-			return 0;
+			return articles;
 		}
 
 		var array = root.get_array();
@@ -206,30 +214,37 @@ public class FeedReader.feedbinAPI : Object {
 				time = new DateTime.from_timeval_local(t);
 			}
 
-			articles.add(new article(
-								id,
-								object.get_string_member("title"),
-								object.get_string_member("url"),
-								object.get_int_member("feed_id").to_string(),
-								ArticleStatus.READ,
-								ArticleStatus.UNMARKED,
-								object.get_string_member("content"),
-								object.get_string_member("summary"),
-								object.get_string_member("author"),
-								time,
-								-1,
-								"",
-								""
-							)
-						);
+			var article = new article(
+					id,
+					object.get_string_member("title") == null ? "" : object.get_string_member("title"),
+					object.get_string_member("url"),
+					object.get_int_member("feed_id").to_string(),
+					unreadIDs.contains(id) ? ArticleStatus.UNREAD : ArticleStatus.READ,
+					starredIDs.contains(id) ? ArticleStatus.MARKED : ArticleStatus.UNMARKED,
+					object.get_string_member("content") == null ? "" : object.get_string_member("content"),
+					object.get_string_member("summary"),
+					object.get_string_member("author"),
+					time,
+					-1,
+					"",
+					""
+				);
+			if(article != null)
+				articles.add(article);
+			else
+			{
+				var node = new Json.Node(Json.NodeType.OBJECT);
+				node.set_object(object);
+				Logger.error("Failed to create article from " + Json.to_string(node, true));
+			}
 		}
 
-		return (int)length;
+		return articles;
 	}
 
-	public Gee.LinkedList<string> unreadEntries()
+	public Gee.List<string> unreadEntries()
 	{
-		string response = m_connection.getRequest("unread_entries.json");
+		string response = m_connection.getRequest("unread_entries.json").data;
 		response = response.substring(1, response.length-2);
 		var a = response.split(",");
 		var ids = new Gee.LinkedList<string>();
@@ -242,9 +257,9 @@ public class FeedReader.feedbinAPI : Object {
 		return ids;
 	}
 
-	public Gee.LinkedList<string> starredEntries()
+	public Gee.List<string> starredEntries()
 	{
-		string response = m_connection.getRequest("starred_entries.json");
+		string response = m_connection.getRequest("starred_entries.json").data;
 		response = response.substring(1, response.length-2);
 		var a = response.split(",");
 		var ids = new Gee.LinkedList<string>();
@@ -257,11 +272,10 @@ public class FeedReader.feedbinAPI : Object {
 		return ids;
 	}
 
-	public void createUnreadEntries(string articleIDs, bool read)
+	public void createUnreadEntries(Gee.List<string> articleIDs, bool read)
 	{
-		var ids = articleIDs.split(",");
 		Json.Array array = new Json.Array();
-		foreach(string id in ids)
+		foreach(string id in articleIDs)
 		{
 			array.add_int_element(int64.parse(id));
 		}
@@ -276,18 +290,19 @@ public class FeedReader.feedbinAPI : Object {
 		gen.set_root(root);
 		string json = gen.to_data(null);
 
-		string response = "";
-
 		if(!read)
-			response = m_connection.postRequest("unread_entries.json", json);
+			m_connection.postRequest("unread_entries.json", json);
 		else
-			response = m_connection.deleteRequest("unread_entries.json", json);
+			m_connection.deleteRequest("unread_entries.json", json);
 	}
 
-	public void createStarredEntries(string articleID, bool starred)
+	public void createStarredEntries(Gee.List<string> articleIDs, bool starred)
 	{
 		Json.Array array = new Json.Array();
-		array.add_int_element(int64.parse(articleID));
+		foreach(string id in articleIDs)
+		{
+			array.add_int_element(int64.parse(id));
+		}
 
 		Json.Object object = new Json.Object();
 		object.set_array_member("starred_entries", array);
@@ -299,17 +314,15 @@ public class FeedReader.feedbinAPI : Object {
 		gen.set_root(root);
 		string json = gen.to_data(null);
 
-		string response = "";
-
 		if(starred)
-			response = m_connection.postRequest("starred_entries.json", json);
+			m_connection.postRequest("starred_entries.json", json);
 		else
-			response = m_connection.deleteRequest("starred_entries.json", json);
+			m_connection.deleteRequest("starred_entries.json", json);
 	}
 
 	public void deleteFeed(string feedID)
 	{
-		m_connection.deleteRequest("subscriptions/%s.json".printf(feedID), "");
+		m_connection.deleteRequest("subscriptions/%s.json".printf(feedID));
 	}
 
 	public void renameFeed(string feedID, string title)
@@ -329,7 +342,7 @@ public class FeedReader.feedbinAPI : Object {
 		var response = m_connection.postRequest("subscriptions/%s/update.json".printf(feedID), json);
 
 		Logger.debug("subscriptions/%s/update.json".printf(feedID));
-		Logger.debug(response);
+		Logger.debug(response.data);
 	}
 
 }

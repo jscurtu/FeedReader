@@ -35,7 +35,7 @@ public class FeedReader.FeedRow : Gtk.ListBoxRow {
 	public signal void moveUP();
 	public signal void deselectRow();
 
-	public FeedRow(string? text, uint unread_count, bool has_icon, string feedID, string catID, int level)
+	public FeedRow(string? text, uint unread_count, string feedID, string catID, int level)
 	{
 		m_level = level;
 		m_catID = catID;
@@ -115,18 +115,18 @@ public class FeedReader.FeedRow : Gtk.ListBoxRow {
 				&& DBusConnection.get_default().supportCategories())
 				{
 					const Gtk.TargetEntry[] provided_targets = {
-					    { "text/plain",     0, DragTarget.FEED }
+						{ "text/plain",     0, DragTarget.FEED }
 					};
 
 					Gtk.drag_source_set (
-			                this,
-			                Gdk.ModifierType.BUTTON1_MASK,
-			                provided_targets,
-			                Gdk.DragAction.MOVE
-			        );
+							this,
+							Gdk.ModifierType.BUTTON1_MASK,
+							provided_targets,
+							Gdk.DragAction.MOVE
+					);
 
 					this.drag_begin.connect(onDragBegin);
-			        this.drag_data_get.connect(onDragDataGet);
+					this.drag_data_get.connect(onDragDataGet);
 				}
 			}
 			catch(GLib.Error e)
@@ -415,33 +415,18 @@ public class FeedReader.FeedRow : Gtk.ListBoxRow {
 			this.show();
 		}
 
-		if(Settings.state().get_boolean("no-animations"))
+		m_revealer.set_transition_duration(duration);
+		m_revealer.set_reveal_child(reveal);
+		if(!reveal)
 		{
-			if(!reveal)
-			{
-				this.hide();
-			}
-			m_revealer.set_transition_type(Gtk.RevealerTransitionType.NONE);
-			m_revealer.set_transition_duration(0);
-			m_revealer.set_reveal_child(reveal);
-			m_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN);
-			m_revealer.set_transition_duration(500);
-		}
-		else
-		{
-			m_revealer.set_transition_duration(duration);
-			m_revealer.set_reveal_child(reveal);
-			if(!reveal)
-			{
-				if(this.is_selected())
-					deselectRow();
+			if(this.is_selected())
+				deselectRow();
 
-				m_timeout_source_id = GLib.Timeout.add(duration, () => {
-					this.hide();
-					m_timeout_source_id = 0;
-					return false;
-				});
-			}
+			m_timeout_source_id = GLib.Timeout.add(duration, () => {
+				this.hide();
+				m_timeout_source_id = 0;
+				return false;
+			});
 		}
 	}
 
@@ -459,6 +444,11 @@ public class FeedReader.FeedRow : Gtk.ListBoxRow {
 			m_unreadBox.enter_notify_event.disconnect(onUnreadEnter);
 			m_unreadBox.leave_notify_event.disconnect(onUnreadLeave);
 		}
+	}
+
+	public void reloadFavIcon()
+	{
+		m_icon = getFeedIcon();
 	}
 
 }

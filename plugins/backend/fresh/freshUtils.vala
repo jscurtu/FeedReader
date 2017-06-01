@@ -24,7 +24,7 @@ public class FeedReader.freshUtils : GLib.Object {
 
 	public string getURL()
 	{
-		string tmp_url = m_settings.get_string("url");
+		string tmp_url = Utils.gsettingReadString(m_settings, "url");
 		if(tmp_url != "")
 		{
 			if(!tmp_url.has_suffix("/"))
@@ -42,42 +42,42 @@ public class FeedReader.freshUtils : GLib.Object {
 
 	public void setURL(string url)
 	{
-		m_settings.set_string("url", url);
+		Utils.gsettingWriteString(m_settings, "url", url);
 	}
 
 	public string getUser()
 	{
-		return m_settings.get_string("username");
+		return Utils.gsettingReadString(m_settings, "username");
 	}
 
 	public void setToken(string token)
 	{
-		m_settings.set_string("token", token);
+		Utils.gsettingWriteString(m_settings, "token", token);
 	}
 
 	public string getToken()
 	{
-		return m_settings.get_string("token");
+		return Utils.gsettingReadString(m_settings, "token");
 	}
 
 	public void setUser(string user)
 	{
-		m_settings.set_string("username", user);
+		Utils.gsettingWriteString(m_settings, "username", user);
 	}
 
 	public string getHtaccessUser()
 	{
-		return m_settings.get_string("htaccess-username");
+		return Utils.gsettingReadString(m_settings, "htaccess-username");
 	}
 
 	public void setHtaccessUser(string ht_user)
 	{
-		m_settings.set_string("htaccess-username", ht_user);
+		Utils.gsettingWriteString(m_settings, "htaccess-username", ht_user);
 	}
 
 	public string getUnmodifiedURL()
 	{
-		return m_settings.get_string("url");
+		return Utils.gsettingReadString(m_settings, "url");
 	}
 
 	public string getPasswd()
@@ -90,17 +90,20 @@ public class FeedReader.freshUtils : GLib.Object {
 		attributes["URL"] = getURL();
 		attributes["Username"] = getUser();
 
-		string passwd = "";
+		string? passwd = "";
 
-		try{
+		try
+		{
 			passwd = Secret.password_lookupv_sync(pwSchema, attributes, null);
 		}
-		catch(GLib.Error e){
-			Logger.error(e.message);
+		catch(GLib.Error e)
+		{
+			Logger.error("freshUtils.getPassword: " + e.message);
 		}
 
 		if(passwd == null)
 		{
+			Logger.warning("freshUtils.getPassword: could not load password");
 			return "";
 		}
 
@@ -166,17 +169,20 @@ public class FeedReader.freshUtils : GLib.Object {
 		attributes["Username"] = getHtaccessUser();
 		attributes["htaccess"] = "true";
 
-		string passwd = "";
+		string? passwd = "";
 
-		try{
+		try
+		{
 			passwd = Secret.password_lookupv_sync(pwSchema, attributes, null);
 		}
-		catch(GLib.Error e){
-			Logger.error("freshUtils: getHtaccessPasswd: " + e.message);
+		catch(GLib.Error e)
+		{
+			Logger.error("freshUtils.getHtaccessPasswd: " + e.message);
 		}
 
 		if(passwd == null)
 		{
+			Logger.warning("freshUtils.getPassword: could not load password");
 			return "";
 		}
 
@@ -206,54 +212,5 @@ public class FeedReader.freshUtils : GLib.Object {
 		{
 			Logger.error("freshUtils: setHtAccessPassword: " + e.message);
 		}
-	}
-
-	public bool downloadIcon(string feed_id, string icon_url)
-	{
-		if(icon_url == "" || icon_url == null || GLib.Uri.parse_scheme(icon_url) == null)
-            return false;
-
-		var settingsTweaks = new GLib.Settings("org.gnome.feedreader.tweaks");
-		string icon_path = GLib.Environment.get_user_data_dir() + "/feedreader/data/feed_icons/";
-    	var path = GLib.File.new_for_path(icon_path);
-    	if(!path.query_exists())
-    	{
-    		try
-    		{
-    			path.make_directory_with_parents();
-    		}
-    		catch(GLib.Error e){
-    			Logger.debug(e.message);
-    		}
-    	}
-		string local_filename = icon_path + feed_id.replace("/", "_").replace(".", "_") + ".ico";
-
-		if(!FileUtils.test (local_filename, GLib.FileTest.EXISTS))
-		{
-			Soup.Message message_dlIcon;
-			message_dlIcon = new Soup.Message ("GET", icon_url);
-
-			if(settingsTweaks.get_boolean("do-not-track"))
-				message_dlIcon.request_headers.append("DNT", "1");
-
-			var session = new Soup.Session ();
-			session.user_agent = Constants.USER_AGENT;
-			var status = session.send_message(message_dlIcon);
-			if (status == 200)
-			{
-				try{
-					FileUtils.set_contents(local_filename, (string)message_dlIcon.response_body.flatten().data, (long)message_dlIcon.response_body.length);
-				}
-				catch(GLib.FileError e)
-				{
-					Logger.error("Error writing icon: %s".printf(e.message));
-				}
-				return true;
-			}
-			Logger.error("Error downloading icon for feed: %s".printf(feed_id));
-			return false;
-		}
-		// file already exists
-		return true;
 	}
 }

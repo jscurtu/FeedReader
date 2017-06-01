@@ -34,6 +34,7 @@ CUSTOM_VAPIS
 )
 
 add_library(${NAME} SHARED ${VALA_C})
+target_link_libraries(${NAME} FeedReaderCommon)
 
 
 # ----------------------------------------------------------
@@ -53,6 +54,7 @@ PACKAGES
     sqlite3
     libsoup-2.4
     WebKit2-4.0
+    libxml-2.0
 
 OPTIONS
     --target-glib=2.32
@@ -81,4 +83,3 @@ install(TARGETS ${NAME} DESTINATION ${PKGLIBDIR}/plugins)
 install(TARGETS ${UINAME} DESTINATION ${PKGLIBDIR}/pluginsUI)
 install(FILES ${NAME}.plugin DESTINATION ${PKGLIBDIR}/plugins)
 install(FILES ${UINAME}.plugin DESTINATION ${PKGLIBDIR}/pluginsUI)
-

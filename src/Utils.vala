@@ -15,6 +15,21 @@
 
 public class FeedReader.Utils : GLib.Object {
 
+	private static Soup.Session? m_session;
+
+	private static Soup.Session getSession()
+	{
+		if(m_session == null)
+		{
+			m_session = new Soup.Session();
+			m_session.user_agent = Constants.USER_AGENT;
+			m_session.ssl_strict = false;
+			m_session.timeout = 1;
+		}
+
+		return m_session;
+	}
+
 	public static string UTF8fix(string? old_string, bool removeHTML = false)
 	{
 		if(old_string == null)
@@ -46,7 +61,7 @@ public class FeedReader.Utils : GLib.Object {
 		return {CategoryID.MASTER.to_string(), CategoryID.TAGS.to_string()};
 	}
 
-	public static GLib.DateTime convertStringToDate(string date)
+	/*public static GLib.DateTime convertStringToDate(string date)
 	{
 		return new GLib.DateTime(
 			new TimeZone.local(),
@@ -57,7 +72,7 @@ public class FeedReader.Utils : GLib.Object {
 			int.parse(date.substring(date.index_of_nth_char(14), date.index_of_nth_char(16) - date.index_of_nth_char(14))),		// min
 			int.parse(date.substring(date.index_of_nth_char(17), date.index_of_nth_char(19) - date.index_of_nth_char(17)))		// sec
 		);
-	}
+	}*/
 
 	public static bool springCleaningNecessary()
 	{
@@ -105,13 +120,15 @@ public class FeedReader.Utils : GLib.Object {
 
 	public static void copyAutostart()
 	{
-		string filename = GLib.Environment.get_user_data_dir() + "/feedreader-autostart.desktop";
+		string desktop = "org.gnome.FeedReader-autostart.desktop";
+		string filename = GLib.Environment.get_user_data_dir() + "/" + desktop;
+
 
 		if(Settings.tweaks().get_boolean("feedreader-autostart") && !FileUtils.test(filename, GLib.FileTest.EXISTS))
 		{
 			try
 			{
-				var origin = File.new_for_path(Constants.INSTALL_PREFIX + "/share/FeedReader/feedreader-autostart.desktop");
+				var origin = File.new_for_path(Constants.INSTALL_PREFIX + "/share/FeedReader/" + desktop);
 				var destination = File.new_for_path(filename);
 	        	origin.copy(destination, FileCopyFlags.NONE);
 			}
@@ -179,16 +196,19 @@ public class FeedReader.Utils : GLib.Object {
 
 		if(uri == null)
 		{
-			Logger.error("Ping failed: can't parse url! Seems to be not valid.");
+			Logger.error(@"Ping failed: can't parse url $link! Seems to be not valid.");
 			return false;
 		}
 
-		var session = new Soup.Session();
-		session.user_agent = Constants.USER_AGENT;
-		session.ssl_strict = false;
-
 		var message = new Soup.Message.from_uri("HEAD", uri);
-		var status = session.send_message(message);
+
+		if(message == null)
+		{
+			Logger.error(@"Ping failed: can't send message to $link! Seems to be not valid.");
+			return false;
+		}
+
+		var status = getSession().send_message(message);
 
 		Logger.debug(@"Ping: status $status");
 
@@ -198,7 +218,7 @@ public class FeedReader.Utils : GLib.Object {
 			return true;
 		}
 
-		Logger.error(@"Ping: failed - %s".printf(Soup.Status.get_phrase(status)));
+		Logger.error(@"Ping: failed %u - %s".printf(status, Soup.Status.get_phrase(status)));
 
 		return false;
 	}
@@ -245,92 +265,92 @@ public class FeedReader.Utils : GLib.Object {
 
 
 	public static string shortenURL(string url)
-    {
-        string longURL = url;
-        if(longURL.has_prefix("https://"))
-        {
-            longURL = longURL.substring(8);
-        }
-        else if(longURL.has_prefix("http://"))
-        {
-            longURL = longURL.substring(7);
-        }
+	{
+		string longURL = url;
+		if(longURL.has_prefix("https://"))
+		{
+			longURL = longURL.substring(8);
+		}
+		else if(longURL.has_prefix("http://"))
+		{
+			longURL = longURL.substring(7);
+		}
 
-        if(longURL.has_prefix("www."))
-        {
-            longURL = longURL.substring(4);
-        }
+		if(longURL.has_prefix("www."))
+		{
+			longURL = longURL.substring(4);
+		}
 
-        if(longURL.has_suffix("api/"))
-        {
-            longURL = longURL.substring(0, longURL.length - 4);
-        }
+		if(longURL.has_suffix("api/"))
+		{
+			longURL = longURL.substring(0, longURL.length - 4);
+		}
 
-        return longURL;
-    }
+		return longURL;
+	}
 
 	// thx to geary :)
 	public static string prepareSearchQuery(string raw_query)
 	{
-        // Two goals here:
-        //   1) append an * after every term so it becomes a prefix search
-        //      (see <https://www.sqlite.org/fts3.html#section_3>), and
-        //   2) strip out common words/operators that might get interpreted as
-        //      search operators.
-        // We ignore everything inside quotes to give the user a way to
-        // override our algorithm here.  The idea is to offer one search query
-        // syntax for Geary that we can use locally and via IMAP, etc.
+		// Two goals here:
+		//   1) append an * after every term so it becomes a prefix search
+		//      (see <https://www.sqlite.org/fts3.html#section_3>), and
+		//   2) strip out common words/operators that might get interpreted as
+		//      search operators.
+		// We ignore everything inside quotes to give the user a way to
+		// override our algorithm here.  The idea is to offer one search query
+		// syntax for Geary that we can use locally and via IMAP, etc.
 
-        string quote_balanced = parseSearchTerm(raw_query).replace("'", " ");
-        if(countChar(raw_query, '"') % 2 != 0)
+		string quote_balanced = parseSearchTerm(raw_query).replace("'", " ");
+		if(countChar(raw_query, '"') % 2 != 0)
 		{
-            // Remove the last quote if it's not balanced.  This has the
-            // benefit of showing decent results as you type a quoted phrase.
-            int last_quote = raw_query.last_index_of_char('"');
-            assert(last_quote >= 0);
-            quote_balanced = raw_query.splice(last_quote, last_quote + 1, " ");
-        }
+			// Remove the last quote if it's not balanced.  This has the
+			// benefit of showing decent results as you type a quoted phrase.
+			int last_quote = raw_query.last_index_of_char('"');
+			assert(last_quote >= 0);
+			quote_balanced = raw_query.splice(last_quote, last_quote + 1, " ");
+		}
 
-        string[] words = quote_balanced.split_set(" \t\r\n:()%*\\");
-        bool in_quote = false;
-        StringBuilder prepared_query = new StringBuilder();
-        foreach(string s in words)
+		string[] words = quote_balanced.split_set(" \t\r\n:()%*\\");
+		bool in_quote = false;
+		StringBuilder prepared_query = new StringBuilder();
+		foreach(string s in words)
 		{
-            s = s.strip();
+			s = s.strip();
 
-            int quotes = countChar(s, '"');
-            if(!in_quote && quotes > 0)
+			int quotes = countChar(s, '"');
+			if(!in_quote && quotes > 0)
 			{
-                in_quote = true;
-                --quotes;
-            }
+				in_quote = true;
+				--quotes;
+			}
 
-            if(!in_quote)
+			if(!in_quote)
 			{
-                string lower = s.down();
-                if(lower == "" || lower == "and" || lower == "or" || lower == "not" || lower == "near" || lower.has_prefix("near/"))
-                    continue;
+				string lower = s.down();
+				if(lower == "" || lower == "and" || lower == "or" || lower == "not" || lower == "near" || lower.has_prefix("near/"))
+					continue;
 
-                if(s.has_prefix("-"))
-                    s = s.substring(1);
+				if(s.has_prefix("-"))
+					s = s.substring(1);
 
-                if(s == "")
-                    continue;
+				if(s == "")
+					continue;
 
-                s = "\"" + s + "*\"";
-            }
+				s = "\"" + s + "*\"";
+			}
 
-            if(in_quote && quotes % 2 != 0)
-                in_quote = false;
+			if(in_quote && quotes % 2 != 0)
+				in_quote = false;
 
-            prepared_query.append(s);
-            prepared_query.append(" ");
-        }
+			prepared_query.append(s);
+			prepared_query.append(" ");
+		}
 
-        assert(!in_quote);
+		assert(!in_quote);
 
-        return prepared_query.str.strip();
-    }
+		return prepared_query.str.strip();
+	}
 
 	public static int countChar(string s, unichar c)
 	{
@@ -399,6 +419,7 @@ public class FeedReader.Utils : GLib.Object {
 
 	public static void resetSettings(GLib.Settings settings)
 	{
+		Logger.warning("Resetting setting " + settings.schema_id);
 		var keys = settings.list_keys();
 		foreach(string key in keys)
 		{
@@ -425,47 +446,281 @@ public class FeedReader.Utils : GLib.Object {
 		return feedname.str;
 	}
 
-	public static bool downloadIcon(string feed_id, string feed_url, string icon_path = GLib.Environment.get_user_data_dir() + "/feedreader/data/feed_icons/")
+	public static async void getFavIcons(Gee.List<feed> feeds, GLib.Cancellable? cancellable = null)
 	{
+		// TODO: It would be nice if we could queue these in parallel
+		foreach(feed f in feeds)
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
+			// first check if the feed provides a valid url for the favicon
+			if(f.getIconURL() != null && yield downloadIcon(f.getFeedID(), f.getIconURL(), cancellable))
+			{
+				// download of provided url successful
+				continue;
+			}
+			// try to find favicon on the website
+			else if(yield downloadFavIcon(f.getFeedID(), f.getURL(), cancellable))
+			{
+				// found an icon on the website of the feed
+				continue;
+			}
+			else
+			{
+				Logger.warning("Couldn't find a favicon for feed " + f.getTitle());
+			}
+		}
+
+		// update last-favicon-update timestamp
+		var lastDownload = new DateTime.from_unix_local(Settings.state().get_int("last-favicon-update"));
+		var now = new DateTime.now_local();
+		var difference = now.difference(lastDownload);
+
+		if((difference/GLib.TimeSpan.DAY) >= Constants.REDOWNLOAD_FAVICONS_AFTER_DAYS)
+			Settings.state().set_int("last-favicon-update", (int)now.to_unix());
+	}
+
+	public static async bool downloadFavIcon(string feed_id, string feed_url, GLib.Cancellable? cancellable = null, string icon_path = GLib.Environment.get_user_data_dir() + "/feedreader/data/feed_icons/")
+	{
+		var uri = new Soup.URI(feed_url);
+		string hostname = uri.get_host();
+		int first = hostname.index_of_char('.', 0);
+		int second = hostname.index_of_char('.', first+1);
+		if(second != -1 && first != second)
+			hostname = hostname.substring(first+1);
+		string siteURL = uri.get_scheme() + "://" + hostname;
+
+		// download html and parse to find location of favicon
+		var message_html = new Soup.Message("GET", siteURL);
+		if(Settings.tweaks().get_boolean("do-not-track"))
+			message_html.request_headers.append("DNT", "1");
+		InputStream bodyStream;
+		try
+		{
+			bodyStream = yield getSession().send_async(message_html);
+		}
+		catch (Error e)
+		{
+			Logger.error(@"Request for $siteURL failed: " + e.message);
+			return false;
+		}
+		if(message_html.status_code == 200)
+		{
+			string html;
+			try
+			{
+				html = (string)yield inputStreamToArray(bodyStream, cancellable);
+			}
+			catch(Error e)
+			{
+				Logger.error(@"Failed to load body of $siteURL: " + e.message);
+				return false;
+			}
+
+			var html_cntx = new Html.ParserCtxt();
+			html_cntx.use_options(Html.ParserOption.NOERROR + Html.ParserOption.NOWARNING);
+			Html.Doc* doc = html_cntx.read_doc(html, siteURL, null, Html.ParserOption.NOERROR + Html.ParserOption.NOWARNING);
+			if(doc == null)
+			{
+				Logger.debug("Utils.downloadFavIcon: parsing html failed");
+				return false;
+			}
+
+			// check for <link rel="icon">
+			var xpath = grabberUtils.getURL(doc, "//link[@rel='icon']");
+
+			if(xpath == null)
+			// check for <link rel="shortcut icon">
+			xpath = grabberUtils.getURL(doc, "//link[@rel='shortcut icon']");
+
+			if(xpath == null)
+			// check for <link rel="apple-touch-icon">
+			xpath = grabberUtils.getURL(doc, "//link[@rel='apple-touch-icon']");
+
+			if(xpath != null)
+			{
+				Logger.debug(@"Utils.downloadFavIcon: xpath success $xpath");
+				xpath = grabberUtils.completeURL(xpath, siteURL);
+				if(yield downloadIcon(feed_id, xpath, cancellable, icon_path))
+				return true;
+			}
+			else
+			{
+				Logger.debug("Utils.downloadFavIcon: xpath failed");
+			}
+
+			delete doc;
+		}
+
+		// try domainname/favicon.ico
+		var icon_url = siteURL;
+		if(!icon_url.has_suffix("/"))
+			icon_url += "/";
+		icon_url += "favicon.ico";
+		return yield downloadIcon(feed_id, icon_url, cancellable, icon_path);
+	}
+
+	public static async bool downloadIcon(string feed_id, string? icon_url, Cancellable? cancellable, string icon_path = GLib.Environment.get_user_data_dir() + "/feedreader/data/feed_icons/")
+	{
+		if(icon_url == "" || icon_url == null || GLib.Uri.parse_scheme(icon_url) == null)
+		{
+			Logger.warning(@"Utils.downloadIcon: icon_url not valid $icon_url");
+			return false;
+		}
+
 		var path = GLib.File.new_for_path(icon_path);
 		try{path.make_directory_with_parents();}catch(GLib.Error e){}
-		string local_filename = icon_path + feed_id.replace("/", "_").replace(".", "_") + ".ico";
+		string filename_prefix = icon_path + feed_id.replace("/", "_").replace(".", "_");
+		string local_filename = filename_prefix + ".ico";
+		string metadata_filename = filename_prefix + ".txt";
+		bool icon_exists = FileUtils.test(local_filename, GLib.FileTest.EXISTS);
 
-		string url = feed_url;
-		if(feed_url.has_prefix("http://"))
-			url.replace("http://", "");
-		else if(feed_url.has_prefix("https://"))
-			url.replace("https://", "");
-
-		if(!FileUtils.test(local_filename, GLib.FileTest.EXISTS))
+		string? etag = null;
+		// Normally, we would store a last modified time as a datetime type, but
+		// servers aren't consistent about the format so we need to treat it as a
+		// black box.
+		string? last_modified = null;
+		if(icon_exists)
 		{
-			Logger.debug("Utils: downloadIcon() url = \"%s\"".printf(url));
+			var lastDownload = new DateTime.from_unix_local(Settings.state().get_int("last-favicon-update"));
+			var now = new DateTime.now_local();
+			var difference = now.difference(lastDownload);
 
-			Soup.Message message_dlIcon;
-			message_dlIcon = new Soup.Message ("GET", "http://f1.allesedv.com/32/%s".printf(url));
+			// icon was already downloaded a few days ago, don't even check if it was updated
+			if((difference/GLib.TimeSpan.DAY) < Constants.REDOWNLOAD_FAVICONS_AFTER_DAYS)
+				return true;
 
-			if(Settings.tweaks().get_boolean("do-not-track"))
-				message_dlIcon.request_headers.append("DNT", "1");
+			var metadata = ResourceMetadata.from_file(metadata_filename);
+			etag = metadata.etag;
+			last_modified = metadata.last_modified;
+		}
 
-			var session = new Soup.Session();
-			session.user_agent = Constants.USER_AGENT;
-			var status = session.send_message(message_dlIcon);
-			if (status == 200)
+		Logger.debug(@"Utils.downloadIcon: url = $icon_url");
+		var message = new Soup.Message("GET", icon_url);
+		if(Settings.tweaks().get_boolean("do-not-track"))
+			message.request_headers.append("DNT", "1");
+
+		if(etag != null)
+			message.request_headers.append("If-None-Match", etag);
+		if(last_modified != null)
+			message.request_headers.append("If-Modified-Since", last_modified);
+
+		InputStream bodyStream;
+		try
+		{
+			bodyStream = yield getSession().send_async(message, cancellable);
+		}
+		catch (Error e)
+		{
+			Logger.error(@"Request for $icon_url failed: " + e.message);
+			return false;
+		}
+		var status = message.status_code;
+		if(status == 304)
+		{
+			var log = "Utils.downloadIcon: ";
+			if(etag != null)
+				log += @"etag ($etag) ";
+			if(last_modified != null)
+			{
+				if(etag != null)
+					log += "and ";
+				log += @"last modified ($last_modified) ";
+			}
+			log += @"matched -> icon unchanged $feed_id";
+			Logger.debug(log);
+			return true;
+		}
+		else if(status == 200)
+		{
+			uint8[] data;
+			try
+			{
+				data = yield inputStreamToArray(bodyStream, cancellable);
+			}
+			catch (Error e)
+			{
+				Logger.error(@"Failed to read body of $icon_url: " + e.message);
+				return false;
+			}
+			if(icon_exists
+			&& (string)data == getFileContent(local_filename))
+			{
+				// file exists and is identical to remote file
+				// we already downloaded it, but there is no need to write to the disc
+				Logger.debug("Utils.downloadIcon: file identical -> icon unchanged");
+			}
+			else
 			{
 				try
 				{
-					FileUtils.set_contents(local_filename, (string)message_dlIcon.response_body.flatten().data, (long)message_dlIcon.response_body.length);
+					FileUtils.set_data(local_filename, data);
 				}
 				catch(GLib.FileError e)
 				{
 					Logger.error("Error writing icon: %s".printf(e.message));
+					return false;
 				}
-				return true;
 			}
-			Logger.error("Error downloading icon for feed: %s".printf(feed_id));
-			return false;
+
+			var metadata = ResourceMetadata();
+			metadata.etag = message.response_headers.get_one("ETag");
+			metadata.last_modified = message.response_headers.get_one("Last-Modified");
+			metadata.save_to_file(metadata_filename);
+			return true;
 		}
-		// file already exists
-		return true;
+		Logger.warning(@"Could not download icon for feed: $feed_id $icon_url, got response code $status");
+		return false;
+	}
+
+	private static string? getFileContent(string filename)
+	{
+		try
+		{
+			string? contents = null;
+			FileUtils.get_contents(filename, out contents);
+			return contents;
+		}
+		catch(Error e)
+		{
+			Logger.warning(@"Utils.getFileContent: could not read file $filename");
+		}
+
+		return null;
+	}
+
+	public static string gsettingReadString(GLib.Settings setting, string key)
+	{
+		string val = setting.get_string(key);
+		if(val == "")
+			Logger.warning("Utils.gsettingReadString: failed to read %s %s".printf(setting.schema_id, key));
+
+		return val;
+	}
+
+	public static void gsettingWriteString(GLib.Settings setting, string key, string val)
+	{
+		if(val == "" || val == null)
+			Logger.warning("Utils.gsettingWriteString: resetting %s %s".printf(setting.schema_id, key));
+
+		if(!setting.set_string(key, val))
+			Logger.error("Utils.gsettingWriteString: writing %s %s failed".printf(setting.schema_id, key));
+	}
+
+	public static async uint8[] inputStreamToArray(InputStream stream, Cancellable? cancellable=null) throws Error
+	{
+		Array<uint8> result = new Array<uint8>();
+		uint8[] buffer = new uint8[1024];
+		while(true)
+		{
+			size_t bytesRead = 0;
+			yield stream.read_all_async(buffer, Priority.DEFAULT_IDLE, cancellable, out bytesRead);
+			if (bytesRead  == 0)
+				break;
+			result.append_vals(buffer, (uint)bytesRead);
+		}
+
+		return result.data;
 	}
 }

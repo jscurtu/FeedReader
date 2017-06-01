@@ -54,7 +54,7 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 		return "0";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string catID)
+	public bool hideCategoryWhenEmpty(string catID)
 	{
 		return catID == "0";
 	}
@@ -124,7 +124,7 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 		m_api.catchupFeed(feedID, false);
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		m_api.catchupFeed(catID, true);
 	}
@@ -163,26 +163,34 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 		m_api.renameLabel(int.parse(tagID), title);
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
+		bool success = false;
 		if(catID == null && newCatName != null)
 		{
 			var newCatID = m_api.createCategory(newCatName);
-			m_api.subscribeToFeed(feedURL, newCatID);
+			success = m_api.subscribeToFeed(feedURL, newCatID, null, null, out errmsg);
 		}
 		else
 		{
-			m_api.subscribeToFeed(feedURL, catID);
+			success = m_api.subscribeToFeed(feedURL, catID, null, null, out errmsg);
 		}
 
-		return (int.parse(dbDaemon.get_default().getHighestFeedID()) + 1).to_string();
+		if(success)
+			feedID = (int.parse(dbDaemon.get_default().getHighestFeedID()) + 1).to_string();
+		else
+			feedID = "-98";
+
+
+		return success;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
+		string? errmsg = null;
 		foreach(feed f in feeds)
 		{
-			m_api.subscribeToFeed(f.getXmlUrl(), f.getCatIDs()[0]);
+			m_api.subscribeToFeed(f.getXmlUrl(), f.getCatIDs()[0], null, null, out errmsg);
 		}
 	}
 
@@ -235,13 +243,28 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 		parser.parse();
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
-		if(m_api.getCategories(categories)
-		&& m_api.getFeeds(feeds, categories)
-		&& m_api.getUncategorizedFeeds(feeds)
-		&& m_api.getTags(tags))
-			return true;
+		if(m_api.getCategories(categories))
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			if(m_api.getFeeds(feeds, categories))
+			{
+				if(cancellable != null && cancellable.is_cancelled())
+					return false;
+
+				if(m_api.getUncategorizedFeeds(feeds))
+				{
+					if(cancellable != null && cancellable.is_cancelled())
+						return false;
+
+					if(m_api.getTags(tags))
+						return true;
+				}
+			}
+		}
 
 		return false;
 	}
@@ -251,12 +274,16 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 		return m_api.getUnreadCount();
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 		var settings_general = new GLib.Settings("org.gnome.feedreader");
 
 		// first use newsPlus plugin to update states of 10x as much articles as we would normaly do
 		var unreadIDs = m_api.NewsPlus(ArticleStatus.UNREAD, 10*settings_general.get_int("max-articles"));
+
+		if(cancellable != null && cancellable.is_cancelled())
+			return;
+
 		if(unreadIDs != null && whatToGet == ArticleStatus.ALL)
 		{
 			Logger.debug("getArticles: newsplus plugin active");
@@ -266,12 +293,18 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 			//updateArticleList();
 		}
 
+		if(cancellable != null && cancellable.is_cancelled())
+			return;
+
 		string articleIDs = "";
 		int skip = count;
 		int amount = 200;
 
 		while(skip > 0)
 		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
 			if(skip >= amount)
 			{
 				skip -= amount;
@@ -313,11 +346,13 @@ public class FeedReader.ttrssInterface : Peas.ExtensionBase, FeedServerInterface
 				return strcmp(a.getArticleID(), b.getArticleID());
 		});
 
+		if(cancellable != null && cancellable.is_cancelled())
+			return;
 
 		if(articles.size > 0)
 		{
 			dbDaemon.get_default().write_articles(articles);
-			updateFeedList();
+			refreshFeedListCounter();
 			updateArticleList();
 		}
 	}

@@ -26,13 +26,6 @@ namespace FeedReader {
  		}
 	}
 
-	public enum LogLevel {
-		OFF,
-		ERROR,
-		MORE,
-		DEBUG
-	}
-
 	public enum ArticleListState {
 		ALL,
 		UNREAD,
@@ -46,15 +39,15 @@ namespace FeedReader {
 	}
 
 	public enum ConsoleColor {
-        BLACK,
-        RED,
-        GREEN,
-        YELLOW,
-        BLUE,
-        MAGENTA,
-        CYAN,
-        WHITE,
-    }
+		BLACK,
+		RED,
+		GREEN,
+		YELLOW,
+		BLUE,
+		MAGENTA,
+		CYAN,
+		WHITE,
+	}
 
 	public enum LogMessage {
 		ERROR,
@@ -183,11 +176,8 @@ namespace FeedReader {
 
 	public enum FeedListType {
 		ALL_FEEDS,
-		SPACER,
-		SEPERATOR,
 		CATEGORY,
 		FEED,
-		HEADLINE,
 		TAG
 	}
 

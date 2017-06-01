@@ -23,7 +23,7 @@ public class FeedReader.Browser : ShareAccountInterface, Peas.ExtensionBase {
 			Gtk.show_uri_on_window(MainWindow.get_default(), url, Gdk.CURRENT_TIME);
 			return true;
 		}
-		catch(GLib.SpawnError e)
+		catch(GLib.Error e)
 		{
 			Logger.error("BrowserPlugin: Error opening url: " + e.message);
 		}
@@ -57,6 +57,11 @@ public class FeedReader.Browser : ShareAccountInterface, Peas.ExtensionBase {
 	public bool needSetup()
 	{
 		return false;
+	}
+
+	public bool singleInstance()
+	{
+		return true;
 	}
 
 	public bool useSystemAccounts()

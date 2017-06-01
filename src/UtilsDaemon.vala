@@ -15,7 +15,7 @@
 
 public class FeedReader.UtilsDaemon : GLib.Object {
 
-    public static void generatePreviews(Gee.LinkedList<article> articles)
+	public static void generatePreviews(Gee.List<article> articles)
 	{
 		string noPreview = _("No Preview Available");
 		foreach(var Article in articles)
@@ -34,11 +34,12 @@ public class FeedReader.UtilsDaemon : GLib.Object {
 				{
 					Logger.debug("Utils: generate preview for article: " + Article.getArticleID());
 					string output = libVilistextum.parse(Article.getHTML(), 1);
-					output = output.strip();
+					if(output != null)
+						output = output.strip();
 
 					if(output == "" || output == null)
 					{
-						Logger.error("generatePreviews: no Preview");
+						Logger.info("generatePreviews: no Preview");
 						Article.setPreview(noPreview);
 						Article.setTitle(Utils.UTF8fix(Article.getTitle(), true));
 						continue;
@@ -68,7 +69,7 @@ public class FeedReader.UtilsDaemon : GLib.Object {
 		}
 	}
 
-    public static void checkHTML(Gee.LinkedList<article> articles)
+	public static void checkHTML(Gee.List<article> articles)
 	{
 		foreach(var Article in articles)
 		{
@@ -84,11 +85,12 @@ public class FeedReader.UtilsDaemon : GLib.Object {
 		}
 	}
 
-    public static uint getRelevantArticles(int newArticlesCount)
+	public static uint getRelevantArticles()
 	{
 		string[] selectedRow = {};
 		ArticleListState state = ArticleListState.ALL;
 		string searchTerm = "";
+		string topRow = Settings.state().get_string("articlelist-top-row");
 		selectedRow = Settings.state().get_string("feedlist-selected-row").split(" ", 2);
 		state = (ArticleListState)Settings.state().get_enum("show-articles");
 		if(Settings.tweaks().get_boolean("restore-searchterm"))
@@ -114,17 +116,10 @@ public class FeedReader.UtilsDaemon : GLib.Object {
 				break;
 		}
 
-		var articles = dbDaemon.get_default().read_articles(
-			selectedRow[1],
-			IDtype,
-			state,
-			searchTerm,
-			newArticlesCount,
-			0,
-			newArticlesCount);
+		int count = dbDaemon.get_default().getArticleCountNewerThanID(topRow, selectedRow[1], IDtype, state, searchTerm);
 
-		Logger.debug("getRelevantArticles: %u".printf(articles.size));
-		return articles.size;
+		Logger.debug(@"getRelevantArticles: $count");
+		return count;
 	}
 
 }

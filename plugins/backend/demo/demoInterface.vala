@@ -88,7 +88,7 @@ public class FeedReader.demoInterface : Peas.ExtensionBase, FeedServerInterface 
 	// Argument: ID of a category
 	// Return: wheather the category should be visible when empty
 	//--------------------------------------------------------------------------------------
-	public bool hideCagetoryWhenEmtpy(string catID)
+	public bool hideCategoryWhenEmpty(string catID)
 	{
 
 	}
@@ -241,7 +241,7 @@ public class FeedReader.demoInterface : Peas.ExtensionBase, FeedServerInterface 
 	//--------------------------------------------------------------------------------------
 	// Mark all articles of the feeds that are part of the category as read
 	//--------------------------------------------------------------------------------------
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 
 	}
@@ -310,7 +310,7 @@ public class FeedReader.demoInterface : Peas.ExtensionBase, FeedServerInterface 
 	// "catID": the category the feed should be placed into, "null" otherwise
 	// "newCatName": the name of a new category the feed should be put in, "null" otherwise
 	//--------------------------------------------------------------------------------------
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
 
 	}
@@ -415,7 +415,7 @@ public class FeedReader.demoInterface : Peas.ExtensionBase, FeedServerInterface 
 	// Fill up the emtpy LinkedList's that are provided with instances of the
 	// model-classes category, feed and article
 	//--------------------------------------------------------------------------------------
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
 
 	}
@@ -439,13 +439,13 @@ public class FeedReader.demoInterface : Peas.ExtensionBase, FeedServerInterface 
 	// "isTagID":	false if "feedID" is a feed-ID, true if "feedID" is a tag-ID
 	//
 	// It is recommended after getting the articles from the server to use the signal
-	// "writeArticles(Gee.LinkedList<article> articles)"
+	// "writeArticles(Gee.List<article> articles)"
 	// to automatically process them in the content-grabber, write them to the
 	// data-base and send all the signals to the UI to update accordingly.
 	// But if the API suggests a different approach you can everything on your
 	// own (see ttrss-backend).
 	//--------------------------------------------------------------------------------------
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 
 	}

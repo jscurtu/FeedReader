@@ -54,7 +54,7 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		return "";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string cadID)
+	public bool hideCategoryWhenEmpty(string cadID)
 	{
 		return false;
 	}
@@ -85,9 +85,9 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 	}
 
 	public void resetAccount()
-    {
-        m_utils.resetAccount();
-    }
+	{
+		m_utils.resetAccount();
+	}
 
 	public bool useMaxArticles()
 	{
@@ -125,7 +125,7 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		m_api.markAsRead(feedID);
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		m_api.markAsRead(catID);
 	}
@@ -176,21 +176,29 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		return m_api.ping();
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
+		bool success = false;
+		feedID = "feed/" + feedURL;
+		errmsg = "";
+
 		if(catID == null && newCatName != null)
 		{
 			string newCatID = m_api.composeTagID(newCatName);
-			m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, {"feed/"+feedURL}, null, newCatID);
+			success = m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, {"feed/"+feedURL}, null, newCatID, null);
 		}
 		else
 		{
-			m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, {"feed/"+feedURL}, null, catID);
+			success = m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, {"feed/"+feedURL}, null, catID, null);
 		}
-		return "feed/" + feedURL;
+
+		if(!success)
+			errmsg = "Inoreader could not add %s";
+
+		return success;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
 		string cat = "";
 		string[] urls = {};
@@ -199,7 +207,7 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		{
 			if(f.getCatIDs()[0] != cat)
 			{
-				m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, urls, null, cat);
+				m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, urls, null, cat, null);
 				urls = {};
 				cat = f.getCatIDs()[0];
 			}
@@ -207,17 +215,17 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 			urls += "feed/" + f.getXmlUrl();
 		}
 
-		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, urls, null, cat);
+		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.SUBSCRIBE, urls, null, cat, null);
 	}
 
 	public void removeFeed(string feedID)
 	{
-		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.UNSUBSCRIBE, {feedID});
+		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.UNSUBSCRIBE, {feedID}, null, null, null);
 	}
 
 	public void renameFeed(string feedID, string title)
 	{
-		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.EDIT, {feedID}, title);
+		m_api.editSubscription(InoReaderAPI.InoSubscriptionAction.EDIT, {feedID}, title, null, null);
 	}
 
 	public void moveFeed(string feedID, string newCatID, string? currentCatID)
@@ -256,11 +264,16 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		parser.parse();
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
-		if(m_api.getFeeds(feeds)
-		&& m_api.getCategoriesAndTags(feeds, categories, tags))
-			return true;
+		if(m_api.getFeeds(feeds))
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			if(m_api.getCategoriesAndTags(feeds, categories, tags))
+				return true;
+		}
 
 		return false;
 	}
@@ -270,7 +283,7 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 		return m_api.getTotalUnread();
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 		if(whatToGet == ArticleStatus.READ)
 		{
@@ -284,6 +297,9 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 
 			while(left > 0)
 			{
+				if(cancellable != null && cancellable.is_cancelled())
+					return;
+
 				if(left > 1000)
 				{
 					continuation = m_api.updateArticles(unreadIDs, 1000, continuation);
@@ -307,6 +323,9 @@ public class FeedReader.InoReaderInterface : Peas.ExtensionBase, FeedServerInter
 
 		while(left > 0)
 		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
 			if(left > 1000)
 			{
 				continuation = m_api.getArticles(articles, 1000, whatToGet, continuation, inoreader_tagID, inoreader_feedID);

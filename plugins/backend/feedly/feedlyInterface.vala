@@ -54,7 +54,7 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 		return "";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string catID)
+	public bool hideCategoryWhenEmpty(string catID)
 	{
 		return catID.has_suffix("global.must");
 	}
@@ -85,9 +85,9 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 	}
 
 	public void resetAccount()
-    {
-        m_utils.resetAccount();
-    }
+	{
+		m_utils.resetAccount();
+	}
 
 	public bool useMaxArticles()
 	{
@@ -126,7 +126,7 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 		m_api.mark_as_read(feedID, "feeds", ArticleStatus.READ);
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		m_api.mark_as_read(catID, "categories", ArticleStatus.READ);
 	}
@@ -183,22 +183,29 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 		return Utils.ping("http://feedly.com/");
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
+		feedID = "feed/" + feedURL;
+		bool success = false;
+		errmsg = "";
+
 		if(catID == null && newCatName != null)
 		{
 			string newCatID = m_api.createCatID(newCatName);
-			m_api.addSubscription(feedURL, null, newCatID);
+			success = m_api.addSubscription(feedURL, null, newCatID);
 		}
 		else
 		{
-			m_api.addSubscription(feedURL, null, catID);
+			success = m_api.addSubscription(feedURL, null, catID);
 		}
 
-		return "feed/" + feedURL;
+		if(!success)
+			errmsg = @"feedly could not add $feedURL";
+
+		return success;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
 		foreach(feed f in feeds)
 		{
@@ -253,14 +260,24 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 		m_api.importOPML(opml);
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
 		m_api.getUnreadCounts();
 
-		if(m_api.getCategories(categories)
-		&& m_api.getFeeds(feeds)
-		&& m_api.getTags(tags))
-			return true;
+		if(m_api.getCategories(categories))
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			if(m_api.getFeeds(feeds))
+			{
+				if(cancellable != null && cancellable.is_cancelled())
+					return false;
+
+				if(m_api.getTags(tags))
+					return true;
+			}
+		}
 
 		return false;
 	}
@@ -270,9 +287,9 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 		return m_api.getTotalUnread();
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
-		string continuation = "";
+		string continuation = null;
 		string feedly_tagID = "";
 		string feedly_feedID = "";
 		if(feedID != null)
@@ -293,6 +310,9 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 
 		while(skip > 0)
 		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
 			if(skip >= amount)
 			{
 				skip -= amount;
@@ -305,7 +325,7 @@ public class FeedReader.feedlyInterface : Peas.ExtensionBase, FeedServerInterfac
 
 			continuation = m_api.getArticles(articles, amount, continuation, whatToGet, feedly_tagID, feedly_feedID);
 
-			if(continuation == "")
+			if(continuation == null)
 				break;
 		}
 

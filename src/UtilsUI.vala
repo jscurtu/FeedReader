@@ -18,13 +18,11 @@ public class FeedReader.UtilsUI : GLib.Object {
 
 	public static uint getRelevantArticles(int newArticlesCount)
 	{
-		string[] selectedRow = {};
-		ArticleListState state = ArticleListState.ALL;
-		string searchTerm = "";
 		var interfacestate = MainWindow.get_default().getInterfaceState();
-		selectedRow = interfacestate.getFeedListSelectedRow().split(" ", 2);
-		state = interfacestate.getArticleListState();
-		searchTerm = interfacestate.getSearchTerm();
+		string[] selectedRow = interfacestate.getFeedListSelectedRow().split(" ", 2);
+		ArticleListState state = interfacestate.getArticleListState();
+		string searchTerm = interfacestate.getSearchTerm();
+		string? topRow = interfacestate.getArticleListTopRow();
 
 		FeedListType IDtype = FeedListType.FEED;
 
@@ -46,16 +44,13 @@ public class FeedReader.UtilsUI : GLib.Object {
 				break;
 		}
 
-		var articles = dbUI.get_default().read_articles(
-			selectedRow[1],
-			IDtype,
-			state,
-			searchTerm,
-			newArticlesCount,
-			0,
-			newArticlesCount);
+		int count = 0;
 
-		return articles.size;
+		if(topRow != null)
+			count = dbUI.get_default().getArticleCountNewerThanID(topRow, selectedRow[1], IDtype, state, searchTerm);
+
+		Logger.debug(@"getRelevantArticles: $count");
+		return count;
 	}
 
 	public static string buildArticle(string html, string title, string url, string? author, string date, string feedID)
@@ -143,42 +138,33 @@ public class FeedReader.UtilsUI : GLib.Object {
 			article.insert(select_pos, "unselectable");
 		}
 
-
-		string fontsize = "intial";
-		string sourcefontsize = "0.75rem";
-		switch(Settings.general().get_enum("fontsize"))
-		{
-			case FontSize.SMALL:
-				fontsize = "smaller";
-				sourcefontsize = "0.5rem";
-				break;
-
-			case FontSize.NORMAL:
-				fontsize = "medium";
-				sourcefontsize = "0.75rem";
-				break;
-
-			case FontSize.LARGE:
-				fontsize = "large";
-				sourcefontsize = "1.0rem";
-				break;
-
-			case FontSize.HUGE:
-				fontsize = "xx-large";
-				sourcefontsize = "1.2rem";
-				break;
-		}
+		string fontfamily_id = "$FONTFAMILY";
+		string font = Settings.general().get_string("font");
+		var desc = Pango.FontDescription.from_string(font);
+		string fontfamilly = desc.get_family();
+		uint fontsize = (uint)GLib.Math.roundf(desc.get_size()/Pango.SCALE);
+		string small_size = (fontsize - 2).to_string();
+		string large_size = (fontsize * 2).to_string();
+		string normal_size = fontsize.to_string();
+		int fontfamilly_pos = article.str.index_of(fontfamily_id);
+		article.erase(fontfamilly_pos, fontfamily_id.length);
+		article.insert(fontfamilly_pos, fontfamilly);
 
 		string fontsize_id = "$FONTSIZE";
-		string sourcefontsize_id = "$SOURCEFONTSIZE";
+		string sourcefontsize_id = "$SMALLSIZE";
 		int fontsize_pos = article.str.index_of(fontsize_id);
 		article.erase(fontsize_pos, fontsize_id.length);
-		article.insert(fontsize_pos, fontsize);
+		article.insert(fontsize_pos, normal_size);
+
+		string largesize_id = "$LARGESIZE";
+		int largesize_pos = article.str.index_of(largesize_id);
+		article.erase(largesize_pos, largesize_id.length);
+		article.insert(largesize_pos, large_size);
 
 		for(int i = article.str.index_of(sourcefontsize_id, 0); i != -1; i = article.str.index_of(sourcefontsize_id, i))
 		{
 			article.erase(i, sourcefontsize_id.length);
-			article.insert(i, sourcefontsize);
+			article.insert(i, small_size);
 		}
 
 
@@ -196,7 +182,6 @@ public class FeedReader.UtilsUI : GLib.Object {
 		{
 			Logger.error("Utils.buildArticle: load CSS: " + e.message);
 		}
-
 
 		return article.str;
 	}
@@ -224,10 +209,10 @@ public class FeedReader.UtilsUI : GLib.Object {
 			// otherwise check if online
 			return DBusConnection.get_default().isOnline();
 		}
-        catch(GLib.Error e)
-        {
-            Logger.error("UtilsUI.canManipulateContent: %s".printf(e.message));
-        }
+		catch(GLib.Error e)
+		{
+			Logger.error("UtilsUI.canManipulateContent: %s".printf(e.message));
+		}
 
 		return false;
 	}
@@ -345,7 +330,7 @@ public class FeedReader.UtilsUI : GLib.Object {
 	{
 		Gtk.init(ref args);
 		Gst.init(ref args);
-		Logger.init("mediaPlayer");
+		Logger.init();
 
 		var window = new Gtk.Window();
 		window.set_size_request(800, 600);
@@ -356,7 +341,7 @@ public class FeedReader.UtilsUI : GLib.Object {
 		Gtk.CssProvider provider = new Gtk.CssProvider();
 		provider.load_from_resource("/org/gnome/FeedReader/gtk-css/basics.css");
 		weak Gdk.Display display = Gdk.Display.get_default();
-        weak Gdk.Screen screen = display.get_default_screen();
+		weak Gdk.Screen screen = display.get_default_screen();
 		Gtk.StyleContext.add_provider_for_screen(screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 
 		var player = new FeedReader.MediaPlayer(url);
@@ -372,9 +357,9 @@ public class FeedReader.UtilsUI : GLib.Object {
 	{
 		Gtk.Image icon = null;
 		if(Gtk.IconTheme.get_default().lookup_icon(name, 0, Gtk.IconLookupFlags.FORCE_SVG) != null)
-            icon = new Gtk.Image.from_icon_name(name, size);
-        else
-            icon = new Gtk.Image.from_icon_name(fallback, size);
+			icon = new Gtk.Image.from_icon_name(name, size);
+		else
+			icon = new Gtk.Image.from_icon_name(fallback, size);
 
 		return icon;
 	}

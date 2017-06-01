@@ -62,29 +62,31 @@ public class FeedReader.Share : GLib.Object {
 		m_accounts = new Gee.ArrayList<ShareAccount>();
 		m_plugins.foreach((@set, info, exten) => {
 			var plugin = (exten as ShareAccountInterface);
+			var plugID = plugin.pluginID();
 			plugin.setupSystemAccounts(m_accounts);
-			if(plugin.needSetup())
+			if(!plugin.singleInstance())
 			{
-				var accounts = Settings.share().get_strv(plugin.pluginID());
-				foreach(string id in accounts)
+				var accounts = Settings.share(plugID).get_strv("account-ids");
+				foreach(string accountID in accounts)
 				{
 					m_accounts.add(
 						new ShareAccount(
-							id,
-							plugin.pluginID(),
-							plugin.getUsername(id),
+							accountID,
+							plugID,
+							plugin.getUsername(accountID),
 							plugin.getIconName(),
 							plugin.pluginName()
 						)
 					);
 				}
 			}
-			else
+			else if(!plugin.needSetup()
+			|| (plugin.needSetup() && Settings.share(plugID).get_boolean("enabled")))
 			{
 				m_accounts.add(
 					new ShareAccount(
-						plugin.pluginID(),
-						plugin.pluginID(),
+						plugID,
+						plugID,
 						plugin.pluginName(),
 						plugin.getIconName(),
 						plugin.pluginName()
@@ -119,10 +121,20 @@ public class FeedReader.Share : GLib.Object {
 
 		m_plugins.foreach((@set, info, exten) => {
 			var plugin = (exten as ShareAccountInterface);
+			var pluginID = plugin.pluginID();
 
-			if(plugin.needSetup() && !plugin.useSystemAccounts())
+			bool singleInstance = false;
+			if(plugin.singleInstance())
 			{
-				accounts.add(new ShareAccount("", plugin.pluginID(), "", plugin.getIconName(), plugin.pluginName()));
+				if(plugin.needSetup() && !Settings.share(pluginID).get_boolean("enabled"))
+					singleInstance = true;
+			}
+			else
+				singleInstance = true;
+
+			if(plugin.needSetup() && !plugin.useSystemAccounts() && singleInstance)
+			{
+				accounts.add(new ShareAccount("", pluginID, "", plugin.getIconName(), plugin.pluginName()));
 			}
 		});
 
@@ -135,24 +147,30 @@ public class FeedReader.Share : GLib.Object {
 		return m_accounts;
 	}
 
-	public static string generateNewID()
+	public string generateNewID()
 	{
 		string id = Utils.string_random(12);
+		bool unique = true;
 
-
-		string[] keys = Settings.share().list_keys();
-
-		foreach(string key in keys)
-		{
-			string[] ids = Settings.share().get_strv(key);
-			foreach(string i in ids)
+		m_plugins.foreach((@set, info, exten) => {
+			var plugin = (exten as ShareAccountInterface);
+			var plugID = plugin.pluginID();
+			if(plugin.needSetup() && !plugin.singleInstance())
 			{
-				if(i == id)
+				string[] ids = Settings.share(plugID).get_strv("account-ids");
+				foreach(string i in ids)
 				{
-					return generateNewID();
+					if(i == id)
+					{
+						unique = false;
+						return;
+					}
 				}
 			}
-		}
+		});
+
+		if(!unique)
+			return generateNewID();
 
 		return id;
 	}

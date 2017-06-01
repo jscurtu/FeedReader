@@ -17,7 +17,7 @@ public class FeedReader.OPMLparser : GLib.Object {
 
 	private string m_opmlString;
 	private uint m_level = 0;
-	private Gee.LinkedList<feed> m_feeds;
+	private Gee.List<feed> m_feeds;
 
 	public OPMLparser(string opml)
 	{
@@ -144,9 +144,9 @@ public class FeedReader.OPMLparser : GLib.Object {
 			}
 
 			if(catID == null)
-				m_feeds.add(new feed("", title, website, false, 0,  { FeedServer.get_default().uncategorizedID() }, feedURL));
+				m_feeds.add(new feed("", title, website, 0,  { FeedServer.get_default().uncategorizedID() }, feedURL));
 			else
-				m_feeds.add(new feed("", title, website, false, 0,  { catID }, feedURL));
+				m_feeds.add(new feed("", title, website, 0,  { catID }, feedURL));
 		}
 	}
 

@@ -119,6 +119,7 @@ public class FeedReader.LoginPage : Gtk.Stack {
 
 		if(extension.needWebLogin())
 		{
+			m_page.reset();
 			m_page.loadPage(extension.buildLoginURL());
 			m_page.getApiCode.connect(extension.extractCode);
 			m_page.success.connect(() => {
@@ -193,6 +194,15 @@ public class FeedReader.LoginPage : Gtk.Stack {
 				ext.postLoginAction.begin((ob, res) => {
 					ext.postLoginAction.end(res);
 					submit_data();
+					try
+					{
+						DBusConnection.get_default().startSync(true);
+					}
+					catch(GLib.Error e)
+					{
+						Logger.error("LoginPage: failed to start the initial sync - " + e.message);
+					}
+
 				});
 
 				return;

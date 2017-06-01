@@ -1,11 +1,14 @@
-project (FeedReader)
+project (FeedReader C)
 cmake_minimum_required (VERSION 2.6)
 list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include_directories(${CMAKE_SOURCE_DIR}/libVilistextum)
 include_directories(${CMAKE_SOURCE_DIR}/libgtkimageview)
+include_directories(${CMAKE_BINARY_DIR}/libIvy)
 include_directories(${CMAKE_SOURCE_DIR})
 
-add_definitions("-w")
+add_definitions(-g)
+add_definitions(-w)
+add_definitions(-rdynamic)
 
 include(GNUInstallDirs)
 set (DATADIR "${CMAKE_INSTALL_PREFIX}/share")
@@ -16,8 +19,8 @@ set (UI_NAME "feedreader")
 set (DAEMON_NAME ${UI_NAME}-daemon)
 set (WEBEXTENSION_NAME webextension)
 set (RELEASE_NAME "FeedReader")
-set (VERSION "2.0.1")
-set (GLIB_VERSION 2.40)
+set (VERSION "2.2-dev")
+set (GLIB_VERSION 2.50)
 
 find_package(PkgConfig)
 find_package(Vala REQUIRED)
@@ -28,10 +31,10 @@ ensure_vala_version("0.30" MINIMUM)
 
 pkg_check_modules(LIBUNITY QUIET unity)
 
-add_definitions (-DGETTEXT_PACKAGE=\"${GETTEXT_PACKAGE}\")
-add_subdirectory (po)
-add_subdirectory (schemas)
-add_subdirectory (libVilistextum)
+add_definitions(-DGETTEXT_PACKAGE=\"${GETTEXT_PACKAGE}\")
+add_subdirectory(po)
+add_subdirectory(schemas)
+add_subdirectory(libVilistextum)
 
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
@@ -41,7 +44,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/data/org.gnome.FeedReader.appdata.xm
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/data/org.gnome.FeedReader.desktop.in" "${CMAKE_SOURCE_DIR}/data/org.gnome.FeedReader.desktop" @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/data/org.gnome.FeedReader-autostart.desktop.in" "${CMAKE_SOURCE_DIR}/data/org.gnome.FeedReader-autostart.desktop" @ONLY)
 
-set(MODULES 
+set(MODULES
 	gtk+-3.0>=3.22
 	json-glib-1.0
 	gee-0.8
@@ -72,6 +75,8 @@ link_directories(${DEPS_LIBRARY_DIRS})
 add_subdirectory(WebExtension)
 add_subdirectory(libgtkimageview)
 add_subdirectory(libgd)
+add_subdirectory(libIvy)
+
 
 
 ################################################################################
@@ -80,10 +85,13 @@ add_subdirectory(libgd)
 vala_precompile(LIBFR libFeedReader
 	src/Logger.vala
 	src/Enums.vala
+	src/FuncUtils.vala
 	src/dbBase.vala
 	src/Settings.vala
+	src/Structs.vala
 	src/Utils.vala
 	src/QueryBuilder.vala
+	src/ContentGrabber/grabberUtils.vala
 	src/ContentGrabber/stringPair.vala
 	src/Model/Feed.vala
 	src/Model/Category.vala
@@ -95,28 +103,30 @@ vala_precompile(LIBFR libFeedReader
 	Constants.vala
 
 PACKAGES
+	gdk-pixbuf-2.0
 	gee-0.8
 	libsecret-1
 	sqlite3
 	libsoup-2.4
+	libxml-2.0
 
 OPTIONS
 	--target-glib=${GLIB_VERSION}
-	--vapi=FeedReaderCommon.vapi
-	--header=FeedReaderCommon.h
-	
+GENERATE_VAPI
+	FeedReaderCommon
 CUSTOM_VAPIS
 	vapi/libvilistextum.vapi
 )
 
 add_library(FeedReaderCommon STATIC ${LIBFR})
-target_link_libraries(FeedReaderCommon vilistextum)
+set_property(TARGET FeedReaderCommon PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(FeedReaderCommon vilistextum ivy)
 
 
 ################################################################################
 
 set(UI_PACKAGES
-	glib-2.0>=2.32
+	glib-2.0>=${GLIB_VERSION}
 	gtk+-3.0
 	json-glib-1.0
 	libsoup-2.4
@@ -129,6 +139,7 @@ set(UI_PACKAGES
 	gstreamer-1.0
 	gstreamer-pbutils-1.0
 	libpeas-1.0
+	libxml-2.0
 	goa-1.0)
 
 vala_precompile(UI ${UI_NAME}
@@ -163,7 +174,7 @@ vala_precompile(UI ${UI_NAME}
 	src/Widgets/LoginRow.vala
 	src/Widgets/MainWindow.vala
 	src/Widgets/MediaPlayer.vala
-	src/Widgets/MediaPopover.vala
+	src/Widgets/MediaButton.vala
 	src/Widgets/MediaRow.vala
 	src/Widgets/ModeButton.vala
 	src/Widgets/RemovePopover.vala
@@ -201,6 +212,7 @@ OPTIONS
 
 CUSTOM_VAPIS
 	${CMAKE_BINARY_DIR}/FeedReaderCommon.vapi
+	${CMAKE_BINARY_DIR}/libIvy/ivy.vapi
 	vapi/libvilistextum.vapi
 	vapi/gtkimageview.vapi
 	vapi/gd-1.0.vapi
@@ -220,7 +232,7 @@ set(DAEMON_OPTIONS
 	--header=FeedReader.h
 	--vapi=FeedReader.vapi)
 set(DAEMON_PACKAGES
-	glib-2.0>=2.32
+	glib-2.0>=${GLIB_VERSION}
 	gio-2.0
 	sqlite3
 	gee-0.8
@@ -249,7 +261,6 @@ vala_precompile(daemon ${DAEMON_NAME}
 	src/Backend/OPMLparser.vala
 	src/ContentGrabber/grabberConfig.vala
 	src/ContentGrabber/grabber.vala
-	src/ContentGrabber/grabberUtils.vala
 
 
 PACKAGES
@@ -261,6 +272,7 @@ OPTIONS
 CUSTOM_VAPIS
 	vapi/libvilistextum.vapi
 	${CMAKE_BINARY_DIR}/FeedReaderCommon.vapi
+	${CMAKE_BINARY_DIR}/libIvy/ivy.vapi
 )
 
 add_executable(${DAEMON_NAME} ${daemon})

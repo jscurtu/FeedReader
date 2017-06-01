@@ -14,7 +14,6 @@ vala_precompile(VALA_C ${DAEMONTARGET}
     feedbinConnection.vala
     feedbinUtils.vala
 
-
 PACKAGES
     libpeas-1.0
     json-glib-1.0
@@ -34,6 +33,7 @@ CUSTOM_VAPIS
 )
 
 add_library(${NAME} SHARED ${VALA_C})
+target_link_libraries(${NAME} FeedReaderCommon)
 
 
 # ----------------------------------------------------------
@@ -53,6 +53,7 @@ PACKAGES
     sqlite3
     libsoup-2.4
     WebKit2-4.0
+    libxml-2.0
 
 OPTIONS
     --target-glib=2.32

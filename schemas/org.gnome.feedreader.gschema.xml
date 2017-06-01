@@ -1,24 +1,10 @@
 <schemalist>
 
-	<enum id="org.gnome.feedreader.loglevel">
-		<value nick="OFF" value="0"/>
-		<value nick="ERROR" value="1"/>
-		<value nick="MORE" value="2"/>
-		<value nick="DEBUG" value="3"/>
-	</enum>
-
 	<enum id="org.gnome.feedreader.article-theme">
 		<value nick="DEFAULT" value="0"/>
 		<value nick="SPRING" value="1"/>
 		<value nick="MIDNIGHT" value="2"/>
 		<value nick="PARCHMENT" value="3"/>
-	</enum>
-
-	<enum id="org.gnome.feedreader.fontsize">
-		<value nick="SMALL" value="0"/>
-		<value nick="NORMAL" value="1"/>
-		<value nick="LARGE" value="2"/>
-		<value nick="HUGE" value="3"/>
 	</enum>
 
 	<enum id="org.gnome.feedreader.drop-articles-duration">
@@ -74,10 +60,6 @@
 			<default>'none'</default>
 		</key>
 
-		<key name='log-level' enum='org.gnome.feedreader.loglevel'>
-			<default>'DEBUG'</default>
-		</key>
-
 		<key name='article-theme' enum='org.gnome.feedreader.article-theme'>
 			<default>'DEFAULT'</default>
 		</key>
@@ -86,8 +68,8 @@
 			<default>'DARK'</default>
 		</key>
 
-		<key name='fontsize' enum='org.gnome.feedreader.fontsize'>
-			<default>'NORMAL'</default>
+		<key name='font' type="s">
+			<default>'Droid Sans 12'</default>
 		</key>
 
 		<key name='drop-articles-after' enum='org.gnome.feedreader.drop-articles-duration'>
@@ -139,6 +121,15 @@
 			<summary>sort articles by date</summary>
 			<description>
 				Sort articles in the ArticleList by date not by insert order.
+			</description>
+		</key>
+		
+		<key name="download-images" type="b">
+			<default>true</default>
+			<summary>Download images of articles (offline mode)</summary>
+			<description>
+				Download of images of articles. If disabled this will speed up the snyc process, 
+				but obviously the images will not be available when in offline-mode.
 			</description>
 		</key>
 

@@ -61,15 +61,16 @@ public class FeedReader.SuggestedFeedRow : Gtk.ListBoxRow {
 		this.set_tooltip_text(m_desc);
 		show_all();
 
-		downloadIcon.begin("/tmp/",m_url, (obj, res) => {
-			bool success = downloadIcon.end(res);
+		var uri = new Soup.URI(url);
+		Utils.downloadIcon.begin(uri.get_host(), uri.get_scheme() + "://" + uri.get_host(), null, "/tmp/", (obj, res) => {
+			bool success = Utils.downloadIcon.end(res);
 			Gtk.Image? icon = null;
 
 			if(success)
 			{
 				try
 				{
-					string filename = "/tmp/" + m_url.replace("/", "_").replace(".", "_") + ".ico";
+					string filename = "/tmp/" + uri.get_host().replace("/", "_").replace(".", "_") + ".ico";
 					Logger.debug("load icon %s".printf(filename));
 					var tmp_icon = new Gdk.Pixbuf.from_file_at_scale(filename, 24, 24, true);
 					icon = new Gtk.Image.from_pixbuf(tmp_icon);
@@ -77,6 +78,7 @@ public class FeedReader.SuggestedFeedRow : Gtk.ListBoxRow {
 				catch(GLib.Error e)
 				{
 					Logger.error("SuggestedFeedRow.constructor: %s".printf(e.message));
+					icon = new Gtk.Image.from_icon_name("feed-rss-symbolic", Gtk.IconSize.LARGE_TOOLBAR);
 				}
 			}
 			else
@@ -88,77 +90,6 @@ public class FeedReader.SuggestedFeedRow : Gtk.ListBoxRow {
    			show_all();
    			iconStack.set_visible_child_name("icon");
 		});
-	}
-
-	private async bool downloadIcon(string path, string url)
-	{
-		if(url == "" || url == null || GLib.Uri.parse_scheme(url) == null)
-            return false;
-
-		SourceFunc callback = downloadIcon.callback;
-		bool success = false;
-		string filename = "/tmp/" + m_url.replace("/", "_").replace(".", "_") + ".ico";
-
-		new GLib.Thread<void*>(null, () => {
-
-			if(FileUtils.test(filename, GLib.FileTest.EXISTS))
-			{
-				success = true;
-				Idle.add((owned) callback, GLib.Priority.HIGH_IDLE);
-				return null;
-			}
-
-			var session = new Soup.Session();
-			session.user_agent = Constants.USER_AGENT;
-			session.timeout = 5;
-			var msg = new Soup.Message("GET", m_url.escape(""));
-			session.send_message(msg);
-			string xml = (string)msg.response_body.flatten().data;
-
-			Rss.Parser parser = new Rss.Parser();
-			try
-			{
-				parser.load_from_data(xml, xml.length);
-			}
-			catch(GLib.Error e)
-			{
-				Logger.error("SuggestedFeedRow.downloadIcon: %s".printf(e.message));
-			}
-			var doc = parser.get_document();
-
-			if(doc.image_url != ""
-			&& doc.image_url != null
-			&& GLib.Uri.parse_scheme(doc.image_url) != null)
-			{
-				Soup.Message message_dlIcon;
-				message_dlIcon = new Soup.Message("GET", doc.image_url);
-				var status = session.send_message(message_dlIcon);
-				if(status == 200)
-				{
-					try{
-						FileUtils.set_contents(	filename,
-												(string)message_dlIcon.response_body.flatten().data,
-												(long)message_dlIcon.response_body.length);
-					}
-					catch(GLib.FileError e)
-					{
-						Logger.error("Error writing icon: %s".printf(e.message));
-					}
-					success = true;
-				}
-				Logger.error("Error downloading icon for feed: %s".printf(m_url));
-			}
-			else
-			{
-				if(Utils.downloadIcon(url, url, path))
-					success = true;
-			}
-			Idle.add((owned) callback, GLib.Priority.HIGH_IDLE);
-			return null;
-		});
-		yield;
-
-		return success;
 	}
 
 	public bool checked()

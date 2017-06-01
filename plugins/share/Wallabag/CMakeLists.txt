@@ -19,6 +19,7 @@ PACKAGES
     WebKit2-4.0
     rest-0.7
     json-glib-1.0
+    libxml-2.0
 
 OPTIONS
     --target-glib=2.32
@@ -33,8 +34,9 @@ CUSTOM_VAPIS
 GLIB_COMPILE_RESOURCES(GRESOURCES SOURCE ${NAME}.gresource.xml)
 
 add_library(${NAME} SHARED ${VALA_C} ${GRESOURCES})
+target_link_libraries(${NAME} FeedReaderCommon)
 add_dependencies(${NAME} ${UI_NAME} ${DAEMON_NAME})
 
 install(TARGETS ${NAME} DESTINATION ${PKGLIBDIR}/pluginsShare)
 install(FILES ${NAME}.plugin DESTINATION ${PKGLIBDIR}/pluginsShare)
-
+add_schema ("org.gnome.feedreader.share.wallabag.gschema.xml")

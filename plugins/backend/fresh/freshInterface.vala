@@ -54,7 +54,7 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 		return "1";
 	}
 
-	public bool hideCagetoryWhenEmtpy(string catID)
+	public bool hideCategoryWhenEmpty(string catID)
 	{
 		return false;
 	}
@@ -130,7 +130,7 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 		m_api.markAllAsRead(feedID);
 	}
 
-	public void setCategorieRead(string catID)
+	public void setCategoryRead(string catID)
 	{
 		m_api.markAllAsRead(catID);
 	}
@@ -165,8 +165,9 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 
 	}
 
-	public string addFeed(string feedURL, string? catID, string? newCatName)
+	public bool addFeed(string feedURL, string? catID, string? newCatName, out string feedID, out string errmsg)
 	{
+		errmsg = "";
 		string? cat = null;
 		if(catID != null)
 			cat = catID;
@@ -175,10 +176,18 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 
 		cat = m_api.composeTagID(cat);
 
-		return m_api.editStream("subscribe", {"feed/" + feedURL}, null, cat, null);
+		var response = m_api.editStream("subscribe", {"feed/" + feedURL}, null, cat, null);
+		if(response.status != 200)
+		{
+			errmsg = response.data;
+			return false;
+		}
+
+		feedID = response.data;
+		return true;
 	}
 
-	public void addFeeds(Gee.LinkedList<feed> feeds)
+	public void addFeeds(Gee.List<feed> feeds)
 	{
 		string cat = "";
 		string[] urls = {};
@@ -244,11 +253,16 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 		parser.parse();
 	}
 
-	public bool getFeedsAndCats(Gee.LinkedList<feed> feeds, Gee.LinkedList<category> categories, Gee.LinkedList<tag> tags)
+	public bool getFeedsAndCats(Gee.List<feed> feeds, Gee.List<category> categories, Gee.List<tag> tags, GLib.Cancellable? cancellable = null)
 	{
-		if(m_api.getSubscriptionList(feeds)
-		&& m_api.getTagList(categories))
-			return true;
+		if(m_api.getSubscriptionList(feeds))
+		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return false;
+
+			if(m_api.getTagList(categories))
+				return true;
+		}
 
 		return false;
 	}
@@ -258,7 +272,7 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 		return m_api.getUnreadCounts();
 	}
 
-	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID)
+	public void getArticles(int count, ArticleStatus whatToGet, string? feedID, bool isTagID, GLib.Cancellable? cancellable = null)
 	{
 		if(whatToGet == ArticleStatus.READ)
 		{
@@ -287,6 +301,9 @@ public class FeedReader.freshInterface : Peas.ExtensionBase, FeedServerInterface
 
 		while(left > 0)
 		{
+			if(cancellable != null && cancellable.is_cancelled())
+				return;
+
 			if(left > 1000)
 			{
 				continuation = m_api.getStreamContents(articles, null, labelID, exclude, 1000, "d");
